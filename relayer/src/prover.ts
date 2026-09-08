@@ -24,7 +24,7 @@ export interface TxProofPayload {
 export async function fetchSepoliaProof(
   transactionHash: string,
   blockHeight: number,
-  timeoutMs: number = 300000 // 5 minutes max wait
+  timeoutMs: number = 900000 // 15 minutes max wait
 ): Promise<TxProofPayload> {
   console.log(`[Prover] Initializing ProofBuilder for chain ${SEPOLIA_CHAIN_KEY} at ${USC_PROVER_API_URL}`);
   const proofBuilder = new proofProvider.service.ProofBuilder(

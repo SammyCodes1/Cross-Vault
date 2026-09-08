@@ -1,122 +1,380 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React, { useState, useEffect, useCallback } from 'react';
+import { ethers, BrowserProvider, Contract } from 'ethers';
+import {
+  NETWORKS,
+  CONTRACT_ADDRESSES,
+  MOCK_COLLATERAL_TOKEN_ABI,
+  DEBT_TOKEN_ABI,
+  CROSS_VAULT_ABI,
+} from './contracts/config';
+import { WalletConnect } from './components/WalletConnect';
+import { LockBorrowPanel } from './components/LockBorrowPanel';
+import { PositionDashboard, type VaultPosition } from './components/PositionDashboard';
+import { PriceControl } from './components/PriceControl';
+import './App.css';
 
-function App() {
-  const [count, setCount] = useState(0)
-
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
 }
 
-export default App
+export const App: React.FC = () => {
+  const [account, setAccount] = useState<string | null>(null);
+  const [chainId, setChainId] = useState<number | null>(null);
+  const [isConnecting, setIsConnecting] = useState<boolean>(false);
+  const [collateralBalance, setCollateralBalance] = useState<string>('0.00');
+  const [debtBalance, setDebtBalance] = useState<string>('0.00');
+  const [currentPrice, setCurrentPrice] = useState<string>('3000.00');
+  const [positions, setPositions] = useState<VaultPosition[]>([]);
+  const [isLoadingPositions, setIsLoadingPositions] = useState<boolean>(false);
+
+  // Helper to obtain signer from window.ethereum
+  const getSigner = useCallback(async (): Promise<ethers.JsonRpcSigner | null> => {
+    if (!window.ethereum) return null;
+    const provider = new BrowserProvider(window.ethereum);
+    return await provider.getSigner();
+  }, []);
+
+  // Switch to Creditcoin 3 Testnet
+  const handleSwitchToCC3 = useCallback(async () => {
+    if (!window.ethereum) {
+      alert('MetaMask or Web3 wallet not detected.');
+      return;
+    }
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: NETWORKS.CREDITCOIN.chainIdHex }],
+      });
+    } catch (switchError: any) {
+      // Error code 4902 indicates chain not added
+      if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: NETWORKS.CREDITCOIN.chainIdHex,
+              chainName: NETWORKS.CREDITCOIN.chainName,
+              nativeCurrency: NETWORKS.CREDITCOIN.nativeCurrency,
+              rpcUrls: NETWORKS.CREDITCOIN.rpcUrls,
+              blockExplorerUrls: NETWORKS.CREDITCOIN.blockExplorerUrls,
+            },
+          ],
+        });
+      } else {
+        console.error('Failed to switch to CC3:', switchError);
+        throw switchError;
+      }
+    }
+  }, []);
+
+  // Switch to Sepolia
+  const handleSwitchToSepolia = useCallback(async () => {
+    if (!window.ethereum) {
+      alert('MetaMask or Web3 wallet not detected.');
+      return;
+    }
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: NETWORKS.SEPOLIA.chainIdHex }],
+      });
+    } catch (switchError: any) {
+      if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: NETWORKS.SEPOLIA.chainIdHex,
+              chainName: NETWORKS.SEPOLIA.chainName,
+              nativeCurrency: NETWORKS.SEPOLIA.nativeCurrency,
+              rpcUrls: NETWORKS.SEPOLIA.rpcUrls,
+              blockExplorerUrls: NETWORKS.SEPOLIA.blockExplorerUrls,
+            },
+          ],
+        });
+      } else {
+        console.error('Failed to switch to Sepolia:', switchError);
+        throw switchError;
+      }
+    }
+  }, []);
+
+  // Connect wallet
+  const handleConnect = useCallback(async () => {
+    if (!window.ethereum) {
+      alert('Please install MetaMask or another EVM wallet.');
+      return;
+    }
+    setIsConnecting(true);
+    try {
+      const provider = new BrowserProvider(window.ethereum);
+      const accounts = await provider.send('eth_requestAccounts', []);
+      const network = await provider.getNetwork();
+
+      if (accounts.length > 0) {
+        setAccount(accounts[0]);
+      }
+      setChainId(Number(network.chainId));
+    } catch (err) {
+      console.error('Wallet connection failed:', err);
+    } finally {
+      setIsConnecting(false);
+    }
+  }, []);
+
+  const handleDisconnect = () => {
+    setAccount(null);
+    setCollateralBalance('0.00');
+    setDebtBalance('0.00');
+  };
+
+  // Fetch balances for connected account
+  const refreshBalances = useCallback(async () => {
+    if (!account) return;
+
+    // 1. Fetch Sepolia collateral balance (mWETH)
+    try {
+      const sepoliaProvider = new ethers.JsonRpcProvider(NETWORKS.SEPOLIA.rpcUrls[0]);
+      const tokenContract = new Contract(
+        CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
+        MOCK_COLLATERAL_TOKEN_ABI,
+        sepoliaProvider
+      );
+      const bal: bigint = await tokenContract.balanceOf(account);
+      setCollateralBalance(parseFloat(ethers.formatEther(bal)).toFixed(4));
+    } catch (err) {
+      console.warn('Could not read mWETH balance:', err);
+    }
+
+    // 2. Fetch CC3 debt token balance (tvUSD)
+    try {
+      const cc3Provider = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
+      const debtContract = new Contract(
+        CONTRACT_ADDRESSES.DEBT_TOKEN,
+        DEBT_TOKEN_ABI,
+        cc3Provider
+      );
+      const debtBal: bigint = await debtContract.balanceOf(account);
+      setDebtBalance(parseFloat(ethers.formatEther(debtBal)).toFixed(2));
+    } catch (err) {
+      console.warn('Could not read tvUSD balance:', err);
+    }
+  }, [account]);
+
+  // Fetch positions and current price from Creditcoin CrossVault
+  const refreshPositions = useCallback(async () => {
+    setIsLoadingPositions(true);
+    try {
+      const cc3Provider = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
+      const vaultContract = new Contract(
+        CONTRACT_ADDRESSES.CROSS_VAULT,
+        CROSS_VAULT_ABI,
+        cc3Provider
+      );
+
+      // Read current price and nextPositionId
+      const [rawPrice, nextPosId]: [bigint, bigint] = await Promise.all([
+        vaultContract.currentPrice(),
+        vaultContract.nextPositionId(),
+      ]);
+
+      const formattedPrice = rawPrice > 0n ? ethers.formatEther(rawPrice) : '3000';
+      setCurrentPrice(parseFloat(formattedPrice).toFixed(2));
+
+      const totalPositions = Number(nextPosId) - 1;
+      const fetchedPositions: VaultPosition[] = [];
+
+      for (let i = 1; i <= totalPositions; i++) {
+        try {
+          const [pos, isLiq]: [any, boolean] = await Promise.all([
+            vaultContract.positions(i),
+            vaultContract.isLiquidatable(i),
+          ]);
+
+          const colEth = parseFloat(ethers.formatEther(pos.collateralAmount));
+          const debtUsd = parseFloat(ethers.formatEther(pos.debtAmount));
+          const priceNum = parseFloat(formattedPrice);
+
+          let ratio: number | null = null;
+          if (debtUsd > 0 && priceNum > 0) {
+            ratio = ((colEth * priceNum) / debtUsd) * 100;
+          }
+
+          fetchedPositions.push({
+            positionId: i,
+            owner: pos.owner,
+            collateralAmount: colEth.toFixed(4),
+            debtAmount: debtUsd.toFixed(2),
+            collateralRatio: ratio,
+            liquidated: Boolean(pos.liquidated),
+            isLiquidatable: isLiq,
+          });
+        } catch (posErr) {
+          console.warn(`Error querying position ${i}:`, posErr);
+        }
+      }
+
+      setPositions(fetchedPositions);
+    } catch (err) {
+      console.error('Error refreshing positions from Creditcoin:', err);
+    } finally {
+      setIsLoadingPositions(false);
+    }
+  }, []);
+
+  const handleRefreshAll = useCallback(() => {
+    refreshBalances();
+    refreshPositions();
+  }, [refreshBalances, refreshPositions]);
+
+  // Handle provider events
+  useEffect(() => {
+    if (!window.ethereum) return;
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts.length > 0) {
+        setAccount(accounts[0]);
+      } else {
+        setAccount(null);
+      }
+    };
+
+    const handleChainChanged = (chainHex: string) => {
+      setChainId(parseInt(chainHex, 16));
+    };
+
+    window.ethereum.on('accountsChanged', handleAccountsChanged);
+    window.ethereum.on('chainChanged', handleChainChanged);
+
+    // Initial check
+    const checkInitialConnection = async () => {
+      try {
+        const provider = new BrowserProvider(window.ethereum);
+        const accounts = await provider.listAccounts();
+        if (accounts.length > 0) {
+          setAccount(accounts[0].address);
+          const network = await provider.getNetwork();
+          setChainId(Number(network.chainId));
+        }
+      } catch (err) {
+        console.warn('Initial connection check failed:', err);
+      }
+    };
+
+    checkInitialConnection();
+
+    return () => {
+      if (window.ethereum.removeListener) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
+      }
+    };
+  }, []);
+
+  // Poll state every 15s and on account changes
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      handleRefreshAll();
+    }, 0);
+    const interval = setInterval(handleRefreshAll, 15000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [handleRefreshAll]);
+
+  return (
+    <div className="app-layout">
+      <WalletConnect
+        account={account}
+        chainId={chainId}
+        isConnecting={isConnecting}
+        onConnect={handleConnect}
+        onDisconnect={handleDisconnect}
+        onSwitchToCC3={handleSwitchToCC3}
+        onSwitchToSepolia={handleSwitchToSepolia}
+      />
+
+      <main className="main-content">
+        {/* Info Banner */}
+        <div className="banner">
+          <div className="banner-item">
+            <span>Collateral Token:</span>
+            <strong>mWETH (Sepolia)</strong>
+          </div>
+          <div className="banner-separator">•</div>
+          <div className="banner-item">
+            <span>Debt Token:</span>
+            <strong>tvUSD (Creditcoin 3)</strong>
+          </div>
+          <div className="banner-separator">•</div>
+          <div className="banner-item">
+            <span>Verification:</span>
+            <strong>USC BlockProver Precompile (0x...FD2)</strong>
+          </div>
+          {account && (
+            <>
+              <div className="banner-separator">•</div>
+              <div className="banner-item">
+                <span>Your tvUSD Balance:</span>
+                <strong className="text-highlight">{debtBalance} tvUSD</strong>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="grid-container">
+          {/* Left Column: Actions */}
+          <div className="col-left">
+            <LockBorrowPanel
+              account={account}
+              chainId={chainId}
+              collateralBalance={collateralBalance}
+              currentPrice={currentPrice}
+              onRefresh={handleRefreshAll}
+              onSwitchToSepolia={handleSwitchToSepolia}
+              getSigner={getSigner}
+            />
+
+            <PriceControl
+              account={account}
+              chainId={chainId}
+              currentVaultPrice={currentPrice}
+              onRefresh={handleRefreshAll}
+              onSwitchToSepolia={handleSwitchToSepolia}
+              getSigner={getSigner}
+            />
+          </div>
+
+          {/* Right Column: Dashboard */}
+          <div className="col-right">
+            <PositionDashboard
+              positions={positions}
+              currentPrice={currentPrice}
+              account={account}
+              chainId={chainId}
+              isLoading={isLoadingPositions}
+              onRefresh={handleRefreshAll}
+              onSwitchToCC3={handleSwitchToCC3}
+              getSigner={getSigner}
+            />
+          </div>
+        </div>
+      </main>
+
+      <footer className="footer">
+        <div className="footer-links">
+          <span>Sepolia CollateralLock: <code>{CONTRACT_ADDRESSES.COLLATERAL_LOCK}</code></span>
+          <span>Creditcoin CrossVault: <code>{CONTRACT_ADDRESSES.CROSS_VAULT}</code></span>
+        </div>
+        <div className="footer-status">
+          <span className="pulse-dot" /> Relayer Online (port 3001)
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+export default App;

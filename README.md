@@ -1,142 +1,123 @@
 # CrossVault
 
-CrossVault is a cross-chain vault infrastructure connecting **Ethereum Sepolia** and **Creditcoin 3 (CC3) Testnet** with Universal Smart Contract (USC) prover integration.
+CrossVault is an end-to-end cross-chain lending protocol connecting **Ethereum Sepolia** and **Creditcoin 3 (CC3) Testnet** powered by the **Attestcoin / Universal Smart Contract (USC)** BlockProver precompile.
 
-## Repository Architecture
+Borrowers lock collateral (mWETH) on Sepolia, the off-chain relayer obtains cryptographic Merkle inclusion and block continuity proofs from the USC Prover, and Creditcoin's on-chain `CrossVault` contract verifies the proof via precompile `0x0000000000000000000000000000000000000FD2` to mint `tvUSD` debt tokens at a 150% collateralization ratio.
 
-This repository is organized as a monorepo featuring four core packages:
+---
+
+## Live Deployments & Addresses
+
+### Ethereum Sepolia (Chain ID: `11155111`)
+- **`MockCollateralToken` (mWETH)**: `0x208Af80035A2009Ec0373264623E417C2c26c6eB`
+- **`CollateralLock`**: `0x819068a43Ec7f7367B025B7dF0FAbeAdf70F173f`
+- **`MockPriceFeed`**: `0x5Eb309a76C6E993293CD756d938BBb35F3bFd35f`
+
+### Creditcoin 3 Testnet (Chain ID: `102031` / `0x18E8F`)
+- **`DebtToken` (tvUSD)**: `0xBDC3F5e9cc6af3b125A45d177E65C67154fa008c`
+- **`CrossVault`**: `0xB88fc006A0cdE6a44963014c22abbC32bAe69739`
+- **BlockProver Precompile**: `0x0000000000000000000000000000000000000FD2`
+
+---
+
+## Monorepo Architecture
 
 ```text
 crossvault/
-├── contracts-sepolia/       # Foundry smart contracts for Ethereum Sepolia
-├── contracts-creditcoin/    # Foundry smart contracts for Creditcoin 3 (CC3) Testnet
-├── relayer/                 # Node.js + TypeScript + Express relayer service
+├── contracts-sepolia/       # Solidity smart contracts for Ethereum Sepolia (Foundry)
+│   ├── src/MockCollateralToken.sol
+│   ├── src/CollateralLock.sol
+│   └── src/MockPriceFeed.sol
+├── contracts-creditcoin/    # Solidity smart contracts for Creditcoin 3 (Foundry)
+│   ├── src/DebtToken.sol
+│   ├── src/CrossVault.sol
+│   └── src/interfaces/IBlockProver.sol
+├── relayer/                 # Express + TypeScript relayer & USC proof submission engine
+│   ├── src/server.ts
+│   ├── src/prover.ts
+│   └── src/contracts.ts
 ├── frontend/                # Vite + React + TypeScript + ethers.js v6 web interface
-├── package.json             # Root npm workspaces configuration (relayer & frontend)
-├── .env.example             # Template for required environment variables
-├── .gitignore               # Root gitignore rules
-└── README.md                # Monorepo documentation
+│   ├── src/components/WalletConnect.tsx
+│   ├── src/components/LockBorrowPanel.tsx
+│   ├── src/components/PositionDashboard.tsx
+│   └── src/components/PriceControl.tsx
+├── deployed-sepolia.json    # Verified Sepolia deployment addresses
+├── deployed-creditcoin.json # Verified Creditcoin 3 deployment addresses
+├── ATTESTCOIN_INTERFACE.md  # On-chain BlockProver interface specification
+└── README.md
 ```
-
-### Packages Overview
-
-| Package | Stack | Purpose |
-| :--- | :--- | :--- |
-| `contracts-sepolia` | Foundry, Solidity, OpenZeppelin Contracts | Source/Destination contracts deployed to Ethereum Sepolia |
-| `contracts-creditcoin` | Foundry, Solidity, OpenZeppelin Contracts | Contracts deployed to Creditcoin 3 (CC3) Testnet |
-| `relayer` | Node.js, TypeScript, Express, ethers.js | Off-chain service monitoring events and coordinating cross-chain relaying |
-| `frontend` | Vite, React, TypeScript, ethers.js v6 | Web interface for interacting with CrossVault |
 
 ---
 
-## Prerequisites
+## Protocol Flow
 
-- **Node.js**: `>= 20.x`
-- **npm**: `>= 10.x`
-- **Foundry / Forge**: `>= 1.0` (`forge --version`)
-- **Git**: Configured for submodule support
+```text
+[Sepolia]
+ 1. User locks mWETH in CollateralLock -> emits Locked(lockId, owner, amount)
+ 2. Relayer captures event log (txHash, blockHeight)
+
+[USC Prover]
+ 3. Relayer calls USC Prover API (Chain Key 1 = Sepolia)
+ 4. Prover generates Merkle Inclusion Proof + Block Continuity Proof
+
+[Creditcoin 3]
+ 5. Relayer submits proof to CrossVault.openPosition(lockId, proof)
+ 6. CrossVault invokes BlockProver precompile (0x...FD2) to verify authenticity
+ 7. CrossVault verifies decoded event data (emitter, lockId, owner, amount)
+ 8. CrossVault mints tvUSD to borrower at 150% collateral ratio
+```
 
 ---
 
-## Getting Started
+## Frontend Web Application
 
-### 1. Clone & Initialize Submodules
+The frontend provides a complete user interface for the cross-chain lending protocol:
+- **Wallet Connection & Network Switching**:
+  - One-click network switcher between **Sepolia** (`11155111`) and **Creditcoin Testnet** (`102031` / `0x18E8F`).
+  - Automatic `wallet_addEthereumChain` configuration for Creditcoin Testnet.
+- **Lock & Borrow Panel**:
+  - Deposit mWETH collateral on Sepolia.
+  - Automatic testnet minting if user balance is 0.
+  - Step-by-step progress tracking: `Locking` -> `Attesting` -> `Verifying on Creditcoin` -> `Position Opened`.
+- **Position Dashboard**:
+  - Real-time queries directly from `CrossVault` on Creditcoin 3.
+  - Displays collateral (mWETH), debt (tvUSD), collateralization ratio %, and health status.
+  - Highlights user's active positions.
+- **Update Price Demo Control**:
+  - Interactive for oracle owner to simulate market price movements.
+  - Calls `MockPriceFeed.setPrice` on Sepolia followed by relayer attestation to CC3.
+  - Quick presets: `$3,000` (Baseline), `$2,000` (Drop), `$1,600` (Triggers liquidation threshold `< 120%`).
+- **Conditional Liquidation**:
+  - "Liquidate" button appears **only** when `isLiquidatable(positionId)` is `true`.
+  - Executes `CrossVault.liquidate(positionId)` on Creditcoin 3 by burning outstanding `tvUSD`.
 
-If cloning the repository fresh:
+---
 
-```bash
-git clone --recurse-submodules <repo-url> crossvault
-cd crossvault
-```
+## Quickstart
 
-Or initialize submodules if already cloned:
-
-```bash
-git submodule update --init --recursive
-```
-
-### 2. Environment Variables
-
-Copy the example environment configuration:
-
-```bash
-cp .env.example .env
-```
-
-Configure the following variables in `.env`:
-
-| Variable | Description | Default / Example |
-| :--- | :--- | :--- |
-| `SEPOLIA_RPC_URL` | Ethereum Sepolia JSON-RPC URL | e.g., Alchemy / Infura endpoint |
-| `SEPOLIA_PRIVATE_KEY` | Private key for Sepolia transactions | `0x...` |
-| `CC3_TESTNET_RPC_URL` | Creditcoin 3 Testnet JSON-RPC URL | `https://rpc.cc3-testnet.creditcoin.network` |
-| `CC3_TESTNET_CHAIN_ID` | Creditcoin 3 Testnet Chain ID | `102031` |
-| `CC3_PRIVATE_KEY` | Private key for Creditcoin 3 transactions | `0x...` |
-| `USC_PROVER_API_URL` | Universal Smart Contract Prover API | `https://prover.cc3-testnet.creditcoin.network` |
-
-### 3. Install Workspace Dependencies
-
-Install dependencies for the `relayer` and `frontend` npm workspaces:
-
+### 1. Install Dependencies
 ```bash
 npm install
 ```
 
-### 4. Build Smart Contracts
-
-Compile the contracts in both Foundry packages:
-
+### 2. Configure Environment
+Copy `.env.example` to `.env` and fill in RPC URLs and private keys:
 ```bash
-# Compile Sepolia contracts
-cd contracts-sepolia
-forge build
-cd ..
-
-# Compile Creditcoin contracts
-cd contracts-creditcoin
-forge build
-cd ..
+cp .env.example .env
 ```
 
-Or run contract test suites:
-
+### 3. Run the Relayer
 ```bash
-npm run test:contracts-sepolia
-npm run test:contracts-creditcoin
-```
-
-### 5. Running Services
-
-#### Relayer (Express + TypeScript)
-
-```bash
-# Development mode with hot-reload
-npm run dev:relayer
-
-# Production build
-npm run build:relayer
+npm run build --workspace=relayer
 npm run start --workspace=relayer
+# Relayer listens on http://localhost:3001
 ```
 
-#### Frontend (Vite + React + TS)
-
+### 4. Run the Frontend
 ```bash
-# Start Vite development server
-npm run dev:frontend
-
-# Production build
-npm run build:frontend
+npm run dev --workspace=frontend
+# Or preview the production build:
+npm run build --workspace=frontend
+npm run preview --workspace=frontend
+# Accessible at http://localhost:5173
 ```
-
----
-
-## Tooling & Dependency Remappings
-
-Both `contracts-sepolia` and `contracts-creditcoin` include OpenZeppelin Contracts and `forge-std`. Standard import remappings are configured in each folder's `remappings.txt`:
-
-```text
-@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
-forge-std/=lib/forge-std/src/
-```
-
-This ensures `@openzeppelin/contracts/...` imports resolve seamlessly across Forge and IDE tooling.
