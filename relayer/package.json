@@ -7,7 +7,10 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts"
+    "dev": "tsx watch src/index.ts",
+    "test": "tsx --test test/relayer.test.ts",
+    "test:integration": "tsx test/integration.test.ts",
+    "deploy:live": "tsx scripts/deploy-live.ts"
   },
   "dependencies": {
     "@gluwa/usc-sdk": "^0.18.0",
@@ -20,6 +23,8 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/node": "^22.13.1",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3"
   }

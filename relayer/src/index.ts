@@ -1,20 +1,9 @@
-import express, { Request, Response } from 'express';
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const app = express();
-const PORT = process.env.PORT || 3001;
-
-app.use(express.json());
-
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', service: 'crossvault-relayer' });
-});
+import { app } from './server';
+import { PORT } from './config';
 
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`CrossVault relayer listening on port ${PORT}`);
+    console.log(`[Relayer] CrossVault relayer service running on http://localhost:${PORT}`);
   });
 }
 
