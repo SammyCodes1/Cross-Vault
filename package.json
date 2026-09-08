@@ -1,0 +1,20 @@
+{
+  "name": "crossvault",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CrossVault Monorepo",
+  "workspaces": [
+    "relayer",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:relayer": "npm run dev --workspace=relayer",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:relayer": "npm run build --workspace=relayer",
+    "build": "npm run build --workspaces --if-present",
+    "test:contracts-sepolia": "cd contracts-sepolia && forge test",
+    "test:contracts-creditcoin": "cd contracts-creditcoin && forge test",
+    "test:contracts": "npm run test:contracts-sepolia && npm run test:contracts-creditcoin"
+  }
+}
