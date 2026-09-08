@@ -7,3 +7,6 @@
 [submodule "contracts-sepolia/lib/openzeppelin-contracts"]
 	path = contracts-sepolia/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "contracts-creditcoin/lib/openzeppelin-contracts"]
+	path = contracts-creditcoin/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
