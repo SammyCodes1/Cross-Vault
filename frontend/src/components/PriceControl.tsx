@@ -201,18 +201,17 @@ export const PriceControl: React.FC<PriceControlProps> = ({
         </div>
 
         {/* Pyth Oracle Section */}
-        <div style={{ marginBottom: '1.25rem', padding: '0.85rem', background: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div className="oracle-section">
+          <div className="oracle-section-header">
             <div>
-              <strong style={{ fontSize: '0.9rem', color: '#c084fc' }}>🔮 Pyth Network (Live Oracle)</strong>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Attest verified ETH/USD on-chain price feed from Pyth contract on Sepolia
+              <div className="oracle-section-title">🔮 Pyth Network (Live Oracle)</div>
+              <div className="oracle-section-desc">
+                Attest verified ETH/USD on-chain price from the Pyth contract on Sepolia
               </div>
             </div>
             <button
               type="button"
-              className="btn-sm"
-              style={{ background: '#7c3aed', color: '#fff', border: 'none', padding: '0.4rem 0.85rem', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+              className="btn-pyth"
               disabled={isUpdating}
               onClick={handleAttestPythPrice}
             >
@@ -222,12 +221,10 @@ export const PriceControl: React.FC<PriceControlProps> = ({
         </div>
 
         {/* Manual Mock Feed Section */}
-        <div style={{ marginBottom: '0.5rem' }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
-            ⚙️ Manual MockPriceFeed (Demo-Control Feature)
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-            Manually shift oracle price to demonstrate collateral ratio drops and trigger liquidations
+        <div>
+          <div className="manual-section-label">⚙️ Manual MockPriceFeed (Demo Control)</div>
+          <div className="oracle-section-desc" style={{ marginBottom: '0.6rem' }}>
+            Shift the oracle price manually to demonstrate collateral ratio changes and trigger liquidations
           </div>
         </div>
 
