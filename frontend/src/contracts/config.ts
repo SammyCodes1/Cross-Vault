@@ -24,11 +24,12 @@ export const CONTRACT_ADDRESSES = {
   MOCK_PRICE_FEED: '0x5Eb309a76C6E993293CD756d938BBb35F3bFd35f',
 
   // Creditcoin 3 Testnet (Chain ID 102031)
-  DEBT_TOKEN: '0xBDC3F5e9cc6af3b125A45d177E65C67154fa008c',
-  CROSS_VAULT: '0xB88fc006A0cdE6a44963014c22abbC32bAe69739',
+  DEBT_TOKEN: '0xD709d29D35D99370f75770fC48dBEa3aE6277eB4',
+  CROSS_VAULT: '0x4D7F912075EF21A400125821f1dA303DF7e1444A',
 } as const;
 
-export const RELAYER_BASE_URL = 'http://localhost:3001';
+export const RELAYER_BASE_URL =
+  (import.meta.env.VITE_RELAYER_URL as string) || 'http://localhost:3001';
 
 export const MOCK_COLLATERAL_TOKEN_ABI = [
   'function name() view returns (string)',
@@ -57,6 +58,9 @@ export const MOCK_PRICE_FEED_ABI = [
 
 export const CROSS_VAULT_ABI = [
   'function currentPrice() view returns (uint256)',
+  'function priceSource() view returns (string)',
+  'function PYTH_CONTRACT_SEPOLIA() view returns (address)',
+  'function PYTH_ETH_FEED_ID() view returns (bytes32)',
   'function nextPositionId() view returns (uint256)',
   'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated)',
   'function getPosition(uint256 positionId) view returns (tuple(address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated))',
@@ -68,6 +72,7 @@ export const CROSS_VAULT_ABI = [
   'function usedLockIds(uint256) view returns (bool)',
   'event PositionOpened(uint256 indexed positionId, address indexed owner, uint256 indexed lockId, uint256 collateralAmount, uint256 debtAmount)',
   'event PriceUpdated(uint256 newPrice, uint256 timestamp)',
+  'event PriceUpdatedFromPyth(uint256 newPrice, int64 rawPrice, int32 expo, uint256 timestamp)',
   'event Liquidated(uint256 indexed positionId, address indexed liquidator)',
 ];
 

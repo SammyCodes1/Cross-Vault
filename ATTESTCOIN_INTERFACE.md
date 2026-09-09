@@ -241,3 +241,34 @@ When `CrossVault.sol` is deployed to Creditcoin:
    ```
 3. If valid, the precompile executes without revert and emits `TransactionVerified(chainKey, height, txIndex)`.
 4. `CrossVault.sol` marks the proof as processed (preventing replay attacks) and executes corresponding mint or release logic.
+
+---
+
+## 6. Pyth Network Price Feed Attestation Specification & Exponent Verification
+
+In addition to `MockPriceFeed`, CrossVault supports real-time market price updates from **Pyth Network** via the same Attestcoin `BlockProver` proof mechanism.
+
+### Verified Contract & Feed Parameters
+- **Sepolia Pyth Contract Address**: `0xDd24F84d36BF92C65F92307595335bdFab5Bbd21`
+- **ETH/USD Price Feed ID**: `0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace`
+- **Event Signature**: `PriceFeedUpdate(bytes32 indexed id, uint64 publishTime, int64 price, uint64 conf)`
+- **Event Topic 0**: `0xd06a6b7f4918494b3719217d1802786c1f5112a6c1d88fe2cfec00b4584f6aec`
+- **Event Topic 1**: `0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace`
+
+### Verified On-Chain Exponent
+The exponent was verified on live Ethereum Sepolia by calling `getPriceUnsafe(bytes32 id)` on contract `0xDd24F84d36BF92C65F92307595335bdFab5Bbd21`:
+- **Returned Price**: `239697384120`
+- **Returned Confidence**: `108116130`
+- **Returned Exponent (`expo`)**: `-8`
+- **Returned Publish Time**: `1788339862`
+- **Verification Source**: Live Sepolia execution of `contracts-sepolia/script/UpdatePythPrice.s.sol` and JSON-RPC query against `https://ethereum-sepolia-rpc.publicnode.com`.
+
+### Decimals Normalization to 18-Decimal tvUSD Unit
+Because `expo == -8`, the raw `int64 price` represents 8 decimal places ($2,396.97384120).
+To normalize this value into the protocol's standard 18-decimal `currentPrice` state variable:
+$$\text{normalizedPrice} = \text{uint256}(\text{uint64}(\text{rawPrice})) \times 10^{(18 - 8)} = \text{rawPrice} \times 10^{10}$$
+
+Example:
+$$\text{Raw Price: } 240000000000 \ (\text{\$2,400.00 with expo } -8)$$
+$$\text{Normalized 18-dec Price: } 240000000000 \times 10^{10} = 2400 \times 10^{18} \ (2400000000000000000000)$$
+

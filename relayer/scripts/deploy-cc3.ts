@@ -48,17 +48,9 @@ async function deployToCreditcoin() {
     )
   );
 
-  console.log('\n--- 1. Deploying DebtToken (tvUSD) ---');
-  const debtTokenFactory = new ethers.ContractFactory(
-    debtTokenArtifact.abi,
-    debtTokenArtifact.bytecode.object,
-    signer
-  );
-  const debtToken = await debtTokenFactory.deploy(ethers.ZeroAddress);
-  console.log(`Transaction sent: ${debtToken.deploymentTransaction()?.hash}`);
-  await debtToken.waitForDeployment();
-  const debtTokenAddress = await debtToken.getAddress();
-  console.log(`DebtToken deployed to: ${debtTokenAddress}`);
+  const debtTokenAddress = '0xCC4606AD0F663f5f8316511416B349cf49204bE6';
+  const debtToken = new ethers.Contract(debtTokenAddress, debtTokenArtifact.abi, signer);
+  console.log(`Using deployed DebtToken at: ${debtTokenAddress}`);
 
   console.log('\n--- 2. Deploying CrossVault ---');
   const crossVaultFactory = new ethers.ContractFactory(
@@ -70,7 +62,8 @@ async function deployToCreditcoin() {
     collateralLockAddress,
     priceFeedAddress,
     debtTokenAddress,
-    1n // Sepolia chain key
+    1n, // Sepolia chain key
+    { gasPrice: ethers.parseUnits('2', 'gwei') }
   );
   console.log(`Transaction sent: ${crossVault.deploymentTransaction()?.hash}`);
   await crossVault.waitForDeployment();
@@ -78,7 +71,9 @@ async function deployToCreditcoin() {
   console.log(`CrossVault deployed to: ${crossVaultAddress}`);
 
   console.log('\n--- 3. Setting CrossVault as authorized Vault on DebtToken ---');
-  const setVaultTx = await (debtToken as any).setVault(crossVaultAddress);
+  const setVaultTx = await (debtToken as any).setVault(crossVaultAddress, {
+    gasPrice: ethers.parseUnits('2', 'gwei')
+  });
   console.log(`setVault tx: ${setVaultTx.hash}`);
   await setVaultTx.wait();
   console.log('CrossVault successfully bound as vault on DebtToken.');

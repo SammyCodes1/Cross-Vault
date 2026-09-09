@@ -26,6 +26,7 @@ export const App: React.FC = () => {
   const [collateralBalance, setCollateralBalance] = useState<string>('0.00');
   const [debtBalance, setDebtBalance] = useState<string>('0.00');
   const [currentPrice, setCurrentPrice] = useState<string>('3000.00');
+  const [priceSource, setPriceSource] = useState<string>('None');
   const [positions, setPositions] = useState<VaultPosition[]>([]);
   const [isLoadingPositions, setIsLoadingPositions] = useState<boolean>(false);
 
@@ -174,14 +175,16 @@ export const App: React.FC = () => {
         cc3Provider
       );
 
-      // Read current price and nextPositionId
-      const [rawPrice, nextPosId]: [bigint, bigint] = await Promise.all([
+      // Read current price, price source, and nextPositionId
+      const [rawPrice, currentSource, nextPosId]: [bigint, string, bigint] = await Promise.all([
         vaultContract.currentPrice(),
+        vaultContract.priceSource(),
         vaultContract.nextPositionId(),
       ]);
 
       const formattedPrice = rawPrice > 0n ? ethers.formatEther(rawPrice) : '3000';
       setCurrentPrice(parseFloat(formattedPrice).toFixed(2));
+      setPriceSource(currentSource || 'None');
 
       const totalPositions = Number(nextPosId) - 1;
       const fetchedPositions: VaultPosition[] = [];
@@ -342,6 +345,7 @@ export const App: React.FC = () => {
               account={account}
               chainId={chainId}
               currentVaultPrice={currentPrice}
+              priceSource={priceSource}
               onRefresh={handleRefreshAll}
               onSwitchToSepolia={handleSwitchToSepolia}
               getSigner={getSigner}
@@ -353,6 +357,7 @@ export const App: React.FC = () => {
             <PositionDashboard
               positions={positions}
               currentPrice={currentPrice}
+              priceSource={priceSource}
               account={account}
               chainId={chainId}
               isLoading={isLoadingPositions}

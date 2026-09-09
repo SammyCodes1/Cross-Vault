@@ -11,6 +11,7 @@ interface PriceControlProps {
   account: string | null;
   chainId: number | null;
   currentVaultPrice: string;
+  priceSource: string;
   onRefresh: () => void;
   onSwitchToSepolia: () => Promise<void>;
   getSigner: () => Promise<ethers.JsonRpcSigner | null>;
@@ -20,6 +21,7 @@ export const PriceControl: React.FC<PriceControlProps> = ({
   account,
   chainId,
   currentVaultPrice,
+  priceSource,
   onRefresh,
   onSwitchToSepolia,
   getSigner,
@@ -131,35 +133,101 @@ export const PriceControl: React.FC<PriceControlProps> = ({
     }
   };
 
+  const handleAttestPythPrice = async () => {
+    setErrorMessage(null);
+    setStatusMessage('Querying latest Pyth ETH/USD update on Sepolia & requesting attest proof...');
+    setIsUpdating(true);
+
+    try {
+      const relayerRes = await fetch(`${RELAYER_BASE_URL}/attest/price/pyth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!relayerRes.ok) {
+        const errJson = await relayerRes.json().catch(() => null);
+        throw new Error(errJson?.error || `Relayer returned HTTP status ${relayerRes.status}`);
+      }
+
+      const relayerData = await relayerRes.json();
+      setStatusMessage(
+        `Pyth live price successfully attested on Creditcoin 3! Tx: ${relayerData.transactionHash ? relayerData.transactionHash.slice(0, 12) + '...' : 'confirmed'}`
+      );
+      onRefresh();
+    } catch (err: unknown) {
+      console.error('Pyth attestation error:', err);
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <div className="card">
       <div className="card-header">
         <div>
-          <h2>Update Price Demo Control</h2>
-          <span className="subtitle">Simulate oracle price shifts &amp; liquidations</span>
+          <h2>Oracle Price Feeds</h2>
+          <span className="subtitle">Live Pyth oracle &amp; manual demo-control</span>
         </div>
         {isOwner ? (
           <span className="badge badge-success">✓ Oracle Owner</span>
         ) : (
-          <span className="badge badge-warning">Owner Access Only</span>
+          <span className="badge badge-warning">Demo Mode</span>
         )}
       </div>
 
       <div className="card-body">
         <div className="oracle-meta-grid">
           <div className="oracle-meta-item">
-            <span className="text-muted">Sepolia Feed Price:</span>
-            <strong>${sepoliaPrice || '...'} tvUSD</strong>
+            <span className="text-muted">Active Price Source:</span>
+            <span className={`price-source-badge price-source-${priceSource.toLowerCase()}`}>
+              {priceSource === 'Pyth' ? 'Pyth (live)' : priceSource === 'Manual' ? 'Manual (demo)' : 'None'}
+            </span>
           </div>
           <div className="oracle-meta-item">
             <span className="text-muted">Creditcoin Vault Price:</span>
             <strong className="text-highlight">${currentVaultPrice} tvUSD</strong>
           </div>
           <div className="oracle-meta-item">
-            <span className="text-muted">Oracle Owner:</span>
+            <span className="text-muted">Sepolia Manual Feed:</span>
+            <strong>${sepoliaPrice || '...'} tvUSD</strong>
+          </div>
+          <div className="oracle-meta-item">
+            <span className="text-muted">Manual Feed Owner:</span>
             <span className="mono">
               {oracleOwner ? `${oracleOwner.slice(0, 6)}...${oracleOwner.slice(-4)}` : 'Loading...'}
             </span>
+          </div>
+        </div>
+
+        {/* Pyth Oracle Section */}
+        <div style={{ marginBottom: '1.25rem', padding: '0.85rem', background: 'var(--bg-main)', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <strong style={{ fontSize: '0.9rem', color: '#c084fc' }}>🔮 Pyth Network (Live Oracle)</strong>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Attest verified ETH/USD on-chain price feed from Pyth contract on Sepolia
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn-sm"
+              style={{ background: '#7c3aed', color: '#fff', border: 'none', padding: '0.4rem 0.85rem', borderRadius: '4px', cursor: 'pointer', fontWeight: 600 }}
+              disabled={isUpdating}
+              onClick={handleAttestPythPrice}
+            >
+              {isUpdating ? 'Attesting...' : 'Attest Pyth Live Price'}
+            </button>
+          </div>
+        </div>
+
+        {/* Manual Mock Feed Section */}
+        <div style={{ marginBottom: '0.5rem' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+            ⚙️ Manual MockPriceFeed (Demo-Control Feature)
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+            Manually shift oracle price to demonstrate collateral ratio drops and trigger liquidations
           </div>
         </div>
 

@@ -33,6 +33,21 @@ contract CrossVault {
     // PriceUpdated(uint256 price, uint256 timestamp)
     bytes32 public constant PRICE_UPDATED_EVENT_TOPIC = keccak256("PriceUpdated(uint256,uint256)");
 
+    // Pyth Network constants on Ethereum Sepolia
+    address public constant PYTH_CONTRACT_SEPOLIA = 0xDd24F84d36BF92C65F92307595335bdFab5Bbd21;
+    bytes32 public constant PYTH_ETH_FEED_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
+    // PriceFeedUpdate(bytes32 indexed id, uint64 publishTime, int64 price, uint64 conf)
+    bytes32 public constant PYTH_PRICE_FEED_UPDATE_TOPIC = keccak256("PriceFeedUpdate(bytes32,uint64,int64,uint64)");
+    // Verified exponent on live Sepolia Pyth contract: -8 (8 decimals)
+    int32 public constant PYTH_ETH_EXPO = -8;
+    uint256 public constant PYTH_PRICE_SCALE = 1e10; // 10 ** (18 - 8)
+
+    enum PriceSource {
+        None,
+        Manual,
+        Pyth
+    }
+
     // Immutable contract references
     address public immutable collateralLock;
     address public immutable priceFeed;
@@ -41,6 +56,7 @@ contract CrossVault {
 
     // Stored price: tvUSD (18 decimals) per 1e18 units of collateral
     uint256 public currentPrice;
+    PriceSource public lastPriceSource;
     uint256 public nextPositionId = 1;
 
     // Replay protection
@@ -59,6 +75,7 @@ contract CrossVault {
         uint256 debtAmount
     );
     event PriceUpdated(uint256 newPrice, uint256 timestamp);
+    event PriceUpdatedFromPyth(uint256 newPrice, int64 rawPrice, int32 expo, uint256 timestamp);
     event Liquidated(uint256 indexed positionId, address indexed liquidator);
 
     // Errors
@@ -72,6 +89,8 @@ contract CrossVault {
     error InvalidPrice();
     error InvalidEventData();
     error NotLiquidatable();
+    error WrongContract();
+    error WrongFeedId();
 
     constructor(
         address _collateralLock,
@@ -157,8 +176,57 @@ contract CrossVault {
         // 3. Decode new price from verified event data
         uint256 newPrice = _decodeAndValidatePriceUpdatedEvent(proof.encodedTx);
         currentPrice = newPrice;
+        lastPriceSource = PriceSource.Manual;
 
         emit PriceUpdated(newPrice, block.timestamp);
+    }
+
+    /**
+     * @notice Updates the stored collateral price by verifying a Pyth PriceFeedUpdate event from Sepolia.
+     * @dev Validates emitter is Pyth Sepolia contract (0xDd24...bd21) and feed id is ETH/USD.
+     * Normalizes the verified int64 price using the verified exponent (-8) into the standard 18-decimal unit.
+     * @param proof The inclusion and continuity proof for the Pyth update transaction.
+     */
+    function updatePriceFromPyth(TxProof calldata proof) external {
+        bytes32 proofId = keccak256(
+            abi.encode(proof.height, proof.merkleProof.root, keccak256(proof.encodedTx))
+        );
+        if (usedPriceProofs[proofId]) revert ProofAlreadyUsed();
+
+        // 1. Verify inclusion proof via BlockProver precompile
+        bool verified = IBlockProver(BLOCK_PROVER).verifyAndEmit(
+            sepoliaChainKey,
+            proof.height,
+            proof.encodedTx,
+            proof.merkleProof,
+            proof.continuityProof
+        );
+        if (!verified) revert VerificationFailed();
+
+        // 2. Prevent replay
+        usedPriceProofs[proofId] = true;
+
+        // 3. Decode verified Pyth event data and validate emitter & feedId
+        int64 rawPrice = _decodeAndValidatePythPriceFeedUpdateEvent(proof.encodedTx);
+        if (rawPrice <= 0) revert InvalidPrice();
+
+        // 4. Normalize raw price (expo = -8) into 18-decimal price unit: rawPrice * 10^(18 - 8) = rawPrice * 1e10
+        uint256 normalizedPrice = uint256(uint64(rawPrice)) * PYTH_PRICE_SCALE;
+        currentPrice = normalizedPrice;
+        lastPriceSource = PriceSource.Pyth;
+
+        emit PriceUpdated(normalizedPrice, block.timestamp);
+        emit PriceUpdatedFromPyth(normalizedPrice, rawPrice, PYTH_ETH_EXPO, block.timestamp);
+    }
+
+    /**
+     * @notice Returns the label of the oracle source that last updated currentPrice.
+     * @return "Pyth", "Manual", or "None"
+     */
+    function priceSource() external view returns (string memory) {
+        if (lastPriceSource == PriceSource.Pyth) return "Pyth";
+        if (lastPriceSource == PriceSource.Manual) return "Manual";
+        return "None";
     }
 
     /**
@@ -406,5 +474,94 @@ contract CrossVault {
         }
         (uint256 pr, ) = abi.decode(encodedTransaction, (uint256, uint256));
         return pr;
+    }
+
+    function _decodeAndValidatePythPriceFeedUpdateEvent(
+        bytes calldata encodedTransaction
+    ) internal view returns (int64 rawPrice) {
+        // 1. Try full USC v1 encoding: (uint8 txType, bytes[] chunks)
+        try this.tryDecodeUscReceipt(encodedTransaction) returns (LogEntry[] memory logs) {
+            for (uint256 i = 0; i < logs.length; i++) {
+                if (logs[i].topics.length >= 2 && logs[i].topics[0] == PYTH_PRICE_FEED_UPDATE_TOPIC) {
+                    if (logs[i].emitter != PYTH_CONTRACT_SEPOLIA) revert WrongContract();
+                    if (logs[i].topics[1] != PYTH_ETH_FEED_ID) revert WrongFeedId();
+                    (, rawPrice, ) = abi.decode(logs[i].data, (uint64, int64, uint64));
+                    return rawPrice;
+                }
+            }
+        } catch (bytes memory reason) {
+            _revertIfSpecificReason(reason);
+        }
+
+        // 2. Try direct LogEntry[]
+        try this.tryDecodeLogEntries(encodedTransaction) returns (LogEntry[] memory logs) {
+            for (uint256 i = 0; i < logs.length; i++) {
+                if (logs[i].topics.length >= 2 && logs[i].topics[0] == PYTH_PRICE_FEED_UPDATE_TOPIC) {
+                    if (logs[i].emitter != PYTH_CONTRACT_SEPOLIA) revert WrongContract();
+                    if (logs[i].topics[1] != PYTH_ETH_FEED_ID) revert WrongFeedId();
+                    (, rawPrice, ) = abi.decode(logs[i].data, (uint64, int64, uint64));
+                    return rawPrice;
+                }
+            }
+        } catch (bytes memory reason) {
+            _revertIfSpecificReason(reason);
+        }
+
+        // 3. Try direct LogEntry
+        try this.tryDecodeSingleLog(encodedTransaction) returns (LogEntry memory logItem) {
+            if (logItem.topics.length >= 2 && logItem.topics[0] == PYTH_PRICE_FEED_UPDATE_TOPIC) {
+                if (logItem.emitter != PYTH_CONTRACT_SEPOLIA) revert WrongContract();
+                if (logItem.topics[1] != PYTH_ETH_FEED_ID) revert WrongFeedId();
+                (, rawPrice, ) = abi.decode(logItem.data, (uint64, int64, uint64));
+                return rawPrice;
+            }
+        } catch (bytes memory reason) {
+            _revertIfSpecificReason(reason);
+        }
+
+        // 4. Try tuple with emitter and feed ID: (address emitter, bytes32 feedId, int64 price)
+        try this.tryDecodePythTupleWithEmitter(encodedTransaction) returns (address em, bytes32 fId, int64 pr) {
+            if (em != PYTH_CONTRACT_SEPOLIA) revert WrongContract();
+            if (fId != PYTH_ETH_FEED_ID) revert WrongFeedId();
+            return pr;
+        } catch (bytes memory reason) {
+            _revertIfSpecificReason(reason);
+        }
+
+        // 5. Try simple tuple: (bytes32 feedId, int64 price)
+        try this.tryDecodePythSimpleTuple(encodedTransaction) returns (bytes32 fId, int64 pr) {
+            if (fId != PYTH_ETH_FEED_ID) revert WrongFeedId();
+            return pr;
+        } catch (bytes memory reason) {
+            _revertIfSpecificReason(reason);
+        }
+
+        revert InvalidEventData();
+    }
+
+    function _revertIfSpecificReason(bytes memory reason) internal pure {
+        if (reason.length >= 4) {
+            bytes4 sel;
+            assembly {
+                sel := mload(add(reason, 32))
+            }
+            if (sel == WrongContract.selector || sel == WrongFeedId.selector) {
+                assembly {
+                    revert(add(reason, 32), mload(reason))
+                }
+            }
+        }
+    }
+
+    function tryDecodePythTupleWithEmitter(
+        bytes calldata encodedTransaction
+    ) external pure returns (address, bytes32, int64) {
+        return abi.decode(encodedTransaction, (address, bytes32, int64));
+    }
+
+    function tryDecodePythSimpleTuple(
+        bytes calldata encodedTransaction
+    ) external pure returns (bytes32, int64) {
+        return abi.decode(encodedTransaction, (bytes32, int64));
     }
 }

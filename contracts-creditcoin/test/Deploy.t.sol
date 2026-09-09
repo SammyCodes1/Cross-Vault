@@ -14,6 +14,12 @@ contract DeployScriptTest is Test {
     }
 
     function test_DeployScript_ExecutesAndDeploysAllContracts() public {
+        string memory existingJson = "";
+        bool existed = vm.exists("../deployed-creditcoin.json");
+        if (existed) {
+            existingJson = vm.readFile("../deployed-creditcoin.json");
+        }
+
         (DebtToken token, CrossVault vault) = script.run();
 
         assertTrue(address(token) != address(0));
@@ -39,7 +45,12 @@ contract DeployScriptTest is Test {
         address deployedDebtToken = vm.parseJsonAddress(jsonContent, ".debtToken");
         assertEq(deployedDebtToken, address(token));
 
-        address deployedVault = vm.parseJsonAddress(jsonContent, ".crossVault");
-        assertEq(deployedVault, address(vault));
+        address deployedCrossVault = vm.parseJsonAddress(jsonContent, ".crossVault");
+        assertEq(deployedCrossVault, address(vault));
+
+        // Restore real live deployment configuration
+        if (existed) {
+            vm.writeFile("../deployed-creditcoin.json", existingJson);
+        }
     }
 }

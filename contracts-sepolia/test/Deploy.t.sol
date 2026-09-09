@@ -15,6 +15,12 @@ contract DeployScriptTest is Test {
     }
 
     function test_DeployScript_ExecutesAndDeploysAllContracts() public {
+        string memory existingJson = "";
+        bool existed = vm.exists("../deployed-sepolia.json");
+        if (existed) {
+            existingJson = vm.readFile("../deployed-sepolia.json");
+        }
+
         (MockCollateralToken token, CollateralLock lock, MockPriceFeed feed) = script.run();
 
         assertTrue(address(token) != address(0));
@@ -29,5 +35,10 @@ contract DeployScriptTest is Test {
         // Verify deployed-sepolia.json was created
         string memory jsonContent = vm.readFile("../deployed-sepolia.json");
         assertTrue(bytes(jsonContent).length > 0);
+
+        // Restore real live deployment configuration
+        if (existed) {
+            vm.writeFile("../deployed-sepolia.json", existingJson);
+        }
     }
 }

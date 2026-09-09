@@ -15,6 +15,7 @@
     "build": "npm run build --workspaces --if-present",
     "test:contracts-sepolia": "cd contracts-sepolia && forge test",
     "test:contracts-creditcoin": "cd contracts-creditcoin && forge test",
-    "test:contracts": "npm run test:contracts-sepolia && npm run test:contracts-creditcoin"
+    "test:contracts": "npm run test:contracts-sepolia && npm run test:contracts-creditcoin",
+    "test:live": "tsx relayer/scripts/run-live-flow.ts"
   }
 }

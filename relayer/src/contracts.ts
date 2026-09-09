@@ -25,11 +25,13 @@ export const MOCK_COLLATERAL_TOKEN_ABI = [
 export const CROSS_VAULT_ABI = [
   'function openPosition(uint256 lockId, tuple(uint64 height, bytes encodedTx, tuple(bytes32 root, tuple(bytes32 hash, bool isLeft)[] siblings) merkleProof, tuple(bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) proof) external returns (uint256 positionId)',
   'function updatePrice(tuple(uint64 height, bytes encodedTx, tuple(bytes32 root, tuple(bytes32 hash, bool isLeft)[] siblings) merkleProof, tuple(bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) proof) external',
+  'function updatePriceFromPyth(tuple(uint64 height, bytes encodedTx, tuple(bytes32 root, tuple(bytes32 hash, bool isLeft)[] siblings) merkleProof, tuple(bytes32 lowerEndpointDigest, bytes32[] roots) continuityProof) proof) external',
   'function getPosition(uint256 positionId) external view returns (tuple(address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated))',
   'function positions(uint256 positionId) external view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated)',
   'function isLiquidatable(uint256 positionId) external view returns (bool)',
   'function liquidate(uint256 positionId) external',
   'function currentPrice() external view returns (uint256)',
+  'function priceSource() external view returns (string)',
   'function nextPositionId() external view returns (uint256)',
   'function usedLockIds(uint256 lockId) external view returns (bool)',
   'function usedPriceProofs(bytes32 proofId) external view returns (bool)',
@@ -37,8 +39,11 @@ export const CROSS_VAULT_ABI = [
   'function priceFeed() external view returns (address)',
   'function debtToken() external view returns (address)',
   'function sepoliaChainKey() external view returns (uint64)',
+  'function PYTH_CONTRACT_SEPOLIA() external view returns (address)',
+  'function PYTH_ETH_FEED_ID() external view returns (bytes32)',
   'event PositionOpened(uint256 indexed positionId, address indexed owner, uint256 indexed lockId, uint256 collateralAmount, uint256 debtAmount)',
   'event PriceUpdated(uint256 newPrice, uint256 timestamp)',
+  'event PriceUpdatedFromPyth(uint256 newPrice, int64 rawPrice, int32 expo, uint256 timestamp)',
   'event Liquidated(uint256 indexed positionId, address indexed liquidator)',
   'error VerificationFailed()',
   'error LockAlreadyUsed()',
@@ -50,7 +55,19 @@ export const CROSS_VAULT_ABI = [
   'error InvalidPrice()',
   'error InvalidEventData()',
   'error NotLiquidatable()',
+  'error WrongContract()',
+  'error WrongFeedId()',
 ];
+
+export const PYTH_CONTRACT_SEPOLIA = '0xDd24F84d36BF92C65F92307595335bdFab5Bbd21';
+export const PYTH_ETH_FEED_ID = '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace';
+
+export const IPYTH_ABI = [
+  'event PriceFeedUpdate(bytes32 indexed id, uint64 publishTime, int64 price, uint64 conf)',
+  'function getPriceUnsafe(bytes32 id) external view returns (tuple(int64 price, uint64 conf, int32 expo, uint256 publishTime))',
+];
+
+export const pythInterface = new ethers.Interface(IPYTH_ABI);
 
 export const DEBT_TOKEN_ABI = [
   'function name() external view returns (string)',
@@ -58,6 +75,10 @@ export const DEBT_TOKEN_ABI = [
   'function decimals() external view returns (uint8)',
   'function totalSupply() external view returns (uint256)',
   'function balanceOf(address account) external view returns (uint256)',
+  'function allowance(address owner, address spender) external view returns (uint256)',
+  'function approve(address spender, uint256 amount) external returns (bool)',
+  'function transfer(address to, uint256 amount) external returns (bool)',
+  'function transferFrom(address from, address to, uint256 amount) external returns (bool)',
   'function vault() external view returns (address)',
 ];
 
@@ -100,6 +121,8 @@ export function decodeRevertReason(error: any, iface: ethers.Interface = crossVa
     'InvalidPrice',
     'InvalidEventData',
     'NotLiquidatable',
+    'WrongContract',
+    'WrongFeedId',
   ];
 
   const fullErrStr = (error.message || '') + ' ' + (error.shortMessage || '') + ' ' + (error.reason || '');

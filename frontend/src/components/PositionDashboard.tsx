@@ -20,6 +20,7 @@ export interface VaultPosition {
 interface PositionDashboardProps {
   positions: VaultPosition[];
   currentPrice: string;
+  priceSource: string;
   account: string | null;
   chainId: number | null;
   isLoading: boolean;
@@ -31,6 +32,7 @@ interface PositionDashboardProps {
 export const PositionDashboard: React.FC<PositionDashboardProps> = ({
   positions,
   currentPrice,
+  priceSource,
   account,
   chainId,
   isLoading,
@@ -123,9 +125,14 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
           <span className="subtitle">Real-time state from CrossVault on Creditcoin 3</span>
         </div>
         <div className="dashboard-header-right">
-          <div className="price-tag">
-            <span className="price-label">Vault Collateral Price:</span>
-            <span className="price-value">${currentPrice} tvUSD</span>
+          <div className="price-tag-group">
+            <div className="price-tag">
+              <span className="price-label">Vault Collateral Price:</span>
+              <span className="price-value">${currentPrice} tvUSD</span>
+            </div>
+            <div className={`price-source-badge price-source-${priceSource.toLowerCase()}`}>
+              Price source: {priceSource === 'Pyth' ? 'Pyth (live)' : priceSource === 'Manual' ? 'Manual (demo)' : 'None'}
+            </div>
           </div>
           <button
             type="button"

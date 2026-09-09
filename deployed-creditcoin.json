@@ -1,6 +1,6 @@
 {
   "network": "creditcoin3-testnet",
   "chainId": 102031,
-  "debtToken": "0xBDC3F5e9cc6af3b125A45d177E65C67154fa008c",
-  "crossVault": "0xB88fc006A0cdE6a44963014c22abbC32bAe69739"
+  "debtToken": "0xD709d29D35D99370f75770fC48dBEa3aE6277eB4",
+  "crossVault": "0x4D7F912075EF21A400125821f1dA303DF7e1444A"
 }

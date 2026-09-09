@@ -78,6 +78,20 @@ describe('Relayer Service Unit & API Tests', () => {
       assert.strictEqual(decoded, 'NotLiquidatable');
     });
 
+    it('decodes custom error WrongContract correctly', () => {
+      const errorData = crossVaultInterface.encodeErrorResult('WrongContract', []);
+      const simulatedError = { data: errorData };
+      const decoded = decodeRevertReason(simulatedError, crossVaultInterface);
+      assert.strictEqual(decoded, 'WrongContract');
+    });
+
+    it('decodes custom error WrongFeedId correctly', () => {
+      const errorData = crossVaultInterface.encodeErrorResult('WrongFeedId', []);
+      const simulatedError = { data: errorData };
+      const decoded = decodeRevertReason(simulatedError, crossVaultInterface);
+      assert.strictEqual(decoded, 'WrongFeedId');
+    });
+
     it('falls back to error message if no custom error data', () => {
       const simulatedError = new Error('execution reverted: custom revert string');
       const decoded = decodeRevertReason(simulatedError, crossVaultInterface);
@@ -204,6 +218,82 @@ describe('Relayer Service Unit & API Tests', () => {
       assert.strictEqual(res.status, 200);
       assert.strictEqual(res.body.success, true);
       assert.strictEqual(res.body.transactionHash, '0x' + '3'.repeat(64));
+    });
+
+    it('POST /attest/price/pyth returns 404 when log does not exist on Sepolia', async () => {
+      const testApp = createRelayerApp({
+        getSepoliaLogs: async () => [],
+      });
+      const res = await request(testApp).post('/attest/price/pyth');
+      assert.strictEqual(res.status, 404);
+      assert.ok(res.body.error.includes('Sepolia Pyth PriceFeedUpdate event log not found'));
+    });
+
+    it('POST /attest/price/pyth returns 502 when prover API fails', async () => {
+      const testApp = createRelayerApp({
+        getSepoliaLogs: async () => [dummyLog],
+        fetchProof: async () => {
+          throw new Error('Prover unavailable');
+        },
+      });
+      const res = await request(testApp).post('/attest/price/pyth');
+      assert.strictEqual(res.status, 502);
+      assert.ok(res.body.error.includes('USC Prover API failed: Prover unavailable'));
+    });
+
+    it('POST /attest/price/pyth returns 409 when updatePriceFromPyth reverts with WrongFeedId', async () => {
+      const errorData = crossVaultInterface.encodeErrorResult('WrongFeedId', []);
+      const testApp = createRelayerApp({
+        getSepoliaLogs: async () => [dummyLog],
+        fetchProof: async () => dummyProof,
+        submitUpdatePriceFromPyth: async () => {
+          const err: any = new Error('execution reverted');
+          err.data = errorData;
+          throw err;
+        },
+      });
+      const res = await request(testApp).post('/attest/price/pyth');
+      assert.strictEqual(res.status, 409);
+      assert.strictEqual(res.body.error, 'WrongFeedId');
+    });
+
+    it('POST /attest/price/pyth returns 200 with tx hash and source: Pyth on success', async () => {
+      const testApp = createRelayerApp({
+        getSepoliaLogs: async () => [dummyLog],
+        fetchProof: async () => dummyProof,
+        submitUpdatePriceFromPyth: async () => ({
+          hash: '0x' + '4'.repeat(64),
+        }),
+      });
+      const res = await request(testApp).post('/attest/price/pyth');
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.success, true);
+      assert.strictEqual(res.body.transactionHash, '0x' + '4'.repeat(64));
+      assert.strictEqual(res.body.source, 'Pyth');
+    });
+
+    it('POST /attest/price/pyth supports explicit transactionHash and blockNumber in body', async () => {
+      let fetchedTx = '';
+      let fetchedBlock = 0;
+      const testApp = createRelayerApp({
+        fetchProof: async (txHash, blockHeight) => {
+          fetchedTx = txHash;
+          fetchedBlock = blockHeight;
+          return dummyProof;
+        },
+        submitUpdatePriceFromPyth: async () => ({
+          hash: '0x' + '5'.repeat(64),
+        }),
+      });
+      const res = await request(testApp)
+        .post('/attest/price/pyth')
+        .send({ transactionHash: '0xabc123', blockNumber: 999999 });
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.success, true);
+      assert.strictEqual(res.body.transactionHash, '0x' + '5'.repeat(64));
+      assert.strictEqual(res.body.source, 'Pyth');
+      assert.strictEqual(fetchedTx, '0xabc123');
+      assert.strictEqual(fetchedBlock, 999999);
     });
   });
 });

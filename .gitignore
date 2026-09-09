@@ -3,15 +3,23 @@ node_modules/
 /.pnp
 .pnp.js
 
-# Foundry build artifacts
+# Environment variables (exclude all .env files except .env.example)
+.env
+.env.*
+!.env.example
+
+# Foundry build & compiler artifacts
 out/
 cache/
-broadcast/
+cache_forge/
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Track real testnet broadcast logs for judge verification, but ignore local Anvil (31337) and dry runs
+!broadcast/
+!**/broadcast/
+broadcast/**/31337/
+**/broadcast/**/31337/
+broadcast/**/dry-run/
+**/broadcast/**/dry-run/
 
 # TypeScript / Build output
 dist/
@@ -24,8 +32,13 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Editor / OS
+# Editor / OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 .vscode/
 .idea/
-.DS_Store
-Thumbs.db

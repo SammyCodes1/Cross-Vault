@@ -359,4 +359,133 @@ contract CrossVaultTest is Test {
         vm.expectRevert(DebtToken.VaultAlreadySet.selector);
         debtToken.setVault(alice);
     }
+
+    // =========================================================================
+    // Pyth Network Attestation Tests
+    // =========================================================================
+
+    function _createPythPriceProof(
+        address emitter,
+        bytes32 feedId,
+        int64 rawPrice,
+        uint64 height
+    ) internal view returns (TxProof memory) {
+        bytes32[] memory topics = new bytes32[](2);
+        topics[0] = crossVault.PYTH_PRICE_FEED_UPDATE_TOPIC();
+        topics[1] = feedId;
+        bytes memory eventData = abi.encode(uint64(block.timestamp), rawPrice, uint64(108116130));
+
+        CrossVault.LogEntry[] memory logs = new CrossVault.LogEntry[](1);
+        logs[0] = CrossVault.LogEntry({
+            emitter: emitter,
+            topics: topics,
+            data: eventData
+        });
+
+        bytes memory encodedTx = abi.encode(logs);
+
+        MerkleProof memory mp = MerkleProof({
+            root: keccak256(abi.encodePacked("pyth-root", rawPrice, height)),
+            siblings: new MerkleProofEntry[](0)
+        });
+        ContinuityProof memory cp = ContinuityProof({
+            lowerEndpointDigest: bytes32(0),
+            roots: new bytes32[](0)
+        });
+        return TxProof({
+            height: height,
+            encodedTx: encodedTx,
+            merkleProof: mp,
+            continuityProof: cp
+        });
+    }
+
+    /**
+     * @notice Tests successful Pyth price update with concrete numeric values:
+     * - Raw Pyth price: 240000000000 (representing $2,400.00 with expo -8)
+     * - Verified expo: -8
+     * - Expected normalized 18-decimal price: 240000000000 * 10^(18 - 8) = 240000000000 * 1e10 = 2400 * 1e18 = 2400000000000000000000
+     */
+    function test_UpdatePriceFromPyth_Success_ConcreteNumericExample() public {
+        address pythSepolia = crossVault.PYTH_CONTRACT_SEPOLIA();
+        bytes32 pythFeedId = crossVault.PYTH_ETH_FEED_ID();
+
+        // Concrete numeric test parameters:
+        // Raw Pyth price: 240,000,000,000 ($2,400.00 USD at 8 decimals)
+        // Expo: -8
+        int64 rawPythPrice = 240000000000;
+        uint256 expectedNormalizedPrice = 2400 ether; // 2400 * 1e18 = 2400000000000000000000
+
+        TxProof memory proof = _createPythPriceProof(pythSepolia, pythFeedId, rawPythPrice, 100);
+
+        // Expect events
+        vm.expectEmit(false, false, false, true);
+        emit PriceUpdated(expectedNormalizedPrice, block.timestamp);
+
+        crossVault.updatePriceFromPyth(proof);
+
+        // Verify stored price matches expected normalized value
+        assertEq(crossVault.currentPrice(), expectedNormalizedPrice);
+        assertEq(crossVault.currentPrice(), 2400000000000000000000);
+        assertEq(crossVault.priceSource(), "Pyth");
+    }
+
+    /**
+     * @notice Rejection test: Revert if Pyth proof points to wrong contract address on Sepolia.
+     */
+    function test_RevertWhen_PythProofWrongContractAddress() public {
+        address fakePyth = address(0xDEADBEEF);
+        bytes32 pythFeedId = crossVault.PYTH_ETH_FEED_ID();
+        int64 rawPythPrice = 240000000000;
+
+        TxProof memory proof = _createPythPriceProof(fakePyth, pythFeedId, rawPythPrice, 101);
+
+        vm.expectRevert(CrossVault.WrongContract.selector);
+        crossVault.updatePriceFromPyth(proof);
+    }
+
+    /**
+     * @notice Rejection test: Revert if Pyth proof points to wrong price feed ID.
+     */
+    function test_RevertWhen_PythProofWrongFeedId() public {
+        address pythSepolia = crossVault.PYTH_CONTRACT_SEPOLIA();
+        bytes32 wrongFeedId = bytes32(uint256(0x123456789));
+        int64 rawPythPrice = 240000000000;
+
+        TxProof memory proof = _createPythPriceProof(pythSepolia, wrongFeedId, rawPythPrice, 102);
+
+        vm.expectRevert(CrossVault.WrongFeedId.selector);
+        crossVault.updatePriceFromPyth(proof);
+    }
+
+    /**
+     * @notice Rejection test: Revert if Pyth proof is replayed.
+     */
+    function test_RevertWhen_PythProofReplayed() public {
+        address pythSepolia = crossVault.PYTH_CONTRACT_SEPOLIA();
+        bytes32 pythFeedId = crossVault.PYTH_ETH_FEED_ID();
+        int64 rawPythPrice = 250000000000;
+
+        TxProof memory proof = _createPythPriceProof(pythSepolia, pythFeedId, rawPythPrice, 103);
+
+        crossVault.updatePriceFromPyth(proof);
+
+        vm.expectRevert(CrossVault.ProofAlreadyUsed.selector);
+        crossVault.updatePriceFromPyth(proof);
+    }
+
+    /**
+     * @notice Rejection test: Revert if Pyth price is non-positive.
+     */
+    function test_RevertWhen_PythProofNonPositivePrice() public {
+        address pythSepolia = crossVault.PYTH_CONTRACT_SEPOLIA();
+        bytes32 pythFeedId = crossVault.PYTH_ETH_FEED_ID();
+        int64 zeroPrice = 0;
+
+        TxProof memory proof = _createPythPriceProof(pythSepolia, pythFeedId, zeroPrice, 104);
+
+        vm.expectRevert(CrossVault.InvalidPrice.selector);
+        crossVault.updatePriceFromPyth(proof);
+    }
 }
+
