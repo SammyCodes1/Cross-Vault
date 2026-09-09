@@ -58,7 +58,7 @@ export async function fetchSepoliaProof(
     encodedTx: proofData.txBytes,
     merkleProof: {
       root: proofData.merkleProof.root,
-      siblings: proofData.merkleProof.siblings.map((s) => ({
+      siblings: proofData.merkleProof.siblings.map((s: any) => ({
         hash: s.hash,
         isLeft: Boolean(s.isLeft),
       })),
