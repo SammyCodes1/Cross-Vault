@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: crossvault-relayer
+    runtime: node
+    rootDir: .
+    buildCommand: npm install && npm run build:relayer
+    startCommand: node relayer/dist/index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: SEPOLIA_RPC_URL
+        sync: false
+      - key: SEPOLIA_PRIVATE_KEY
+        sync: false
+      - key: CC3_TESTNET_RPC_URL
+        sync: false
+      - key: CC3_TESTNET_CHAIN_ID
+        sync: false
+      - key: CC3_PRIVATE_KEY
+        sync: false
+      - key: USC_PROVER_API_URL
+        sync: false
+      - key: PYTH_API_KEY
+        sync: false
