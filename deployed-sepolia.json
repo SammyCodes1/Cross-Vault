@@ -1,8 +1,8 @@
 {
-  "CollateralLock": "0x819068a43Ec7f7367B025B7dF0FAbeAdf70F173f",
+  "CollateralLock": "0x1eA40aB9658795c329Bc29D9bf553b8a6ede724f",
   "MockCollateralToken": "0x208Af80035A2009Ec0373264623E417C2c26c6eB",
   "MockPriceFeed": "0x5Eb309a76C6E993293CD756d938BBb35F3bFd35f",
-  "collateralLock": "0x819068a43Ec7f7367B025B7dF0FAbeAdf70F173f",
+  "collateralLock": "0x1eA40aB9658795c329Bc29D9bf553b8a6ede724f",
   "mockCollateralToken": "0x208Af80035A2009Ec0373264623E417C2c26c6eB",
   "mockPriceFeed": "0x5Eb309a76C6E993293CD756d938BBb35F3bFd35f"
 }
