@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NETWORKS } from '../contracts/config';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -21,6 +21,24 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
   onSwitchToCC3,
   onSwitchToSepolia,
 }) => {
+  const [copied, setCopied] = useState(false);
+
+  const copyAddress = async () => {
+    if (!account) return;
+    try {
+      await navigator.clipboard.writeText(account);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = account;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
   const getNetworkBadge = () => {
     if (!chainId) return null;
     if (chainId === NETWORKS.SEPOLIA.chainId) {
@@ -62,9 +80,15 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
         {account ? (
           <div className="account-pill">
             <span className="account-dot" />
-            <span className="account-address">
-              {account.slice(0, 6)}...{account.slice(-4)}
-            </span>
+            <button
+              type="button"
+              className="account-address"
+              onClick={copyAddress}
+              title={account}
+              aria-label="Copy wallet address"
+            >
+              {copied ? 'Copied' : `${account.slice(0, 6)}...${account.slice(-4)}`}
+            </button>
             <button type="button" className="btn-icon" title="Disconnect" onClick={onDisconnect}>
               ✕
             </button>
