@@ -22,6 +22,17 @@ import {
 } from './contracts';
 import { fetchSepoliaProof, TxProofPayload } from './prover';
 
+type AttestJobStatus = 'pending' | 'completed' | 'failed';
+
+interface AttestJob {
+  id: string;
+  status: AttestJobStatus;
+  message: string;
+  error?: string;
+  transactionHash?: string;
+  positionId?: string;
+}
+
 export interface RelayerDependencies {
   fetchProof?: (txHash: string, blockHeight: number) => Promise<TxProofPayload>;
   getSepoliaLogs?: (params: ethers.Filter) => Promise<ethers.Log[]>;
@@ -64,6 +75,19 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
   app.use(cors());
   app.use(express.json());
   const allowAttest = createAttestRateLimiter();
+  const jobs = new Map<string, AttestJob>();
+  let jobSeq = 0;
+
+  function createJob(message: string): AttestJob {
+    jobSeq += 1;
+    const job: AttestJob = {
+      id: `job-${Date.now()}-${jobSeq}`,
+      status: 'pending',
+      message,
+    };
+    jobs.set(job.id, job);
+    return job;
+  }
 
   // Health check endpoint
   app.get('/health', (_req: Request, res: Response) => {
@@ -74,10 +98,19 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
     });
   });
 
+  app.get('/attest/jobs/:jobId', (req: Request, res: Response) => {
+    const job = jobs.get(req.params.jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Unknown attestation job' });
+    }
+    return res.status(200).json(job);
+  });
+
   /**
    * POST /attest/lock/:lockId
-   * Finds the Locked log on Sepolia, requests proof from USC Prover API,
-   * and submits openPosition on Creditcoin 3 CrossVault.
+   * Starts lock attestation in the background and returns a job id.
+   * Creditcoin can take several minutes to attest a Sepolia block; hosted
+   * HTTP timeouts cannot wait on that, so the client polls /attest/jobs/:id.
    */
   app.post('/attest/lock/:lockId', async (req: Request, res: Response) => {
     if (!allowAttest(req, res)) return;
@@ -89,102 +122,146 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
       return res.status(400).json({ error: `Invalid lockId parameter: ${lockId}` });
     }
 
-    console.log(`[Relayer] Attesting lock for lockId: ${lockId}`);
+    const requestedTxHash =
+      typeof req.body?.transactionHash === 'string' ? req.body.transactionHash : null;
+    const requestedBlock =
+      req.body?.blockNumber !== undefined && req.body?.blockNumber !== null
+        ? Number(req.body.blockNumber)
+        : null;
 
-    // 1. Read deployed addresses
+    const job = createJob(`Looking up Sepolia lock #${lockId}`);
+    console.log(`[Relayer] Attesting lock for lockId: ${lockId} job=${job.id}`);
+
+    void runLockAttestation(job, lockId, lockIdBigInt, requestedTxHash, requestedBlock).catch(
+      (err: any) => {
+        job.status = 'failed';
+        job.error = err?.message || 'Lock attestation failed';
+        job.message = job.error;
+      }
+    );
+
+    return res.status(202).json({
+      jobId: job.id,
+      status: job.status,
+      message: job.message,
+    });
+  });
+
+  async function runLockAttestation(
+    job: AttestJob,
+    lockId: string,
+    lockIdBigInt: bigint,
+    requestedTxHash: string | null,
+    requestedBlock: number | null
+  ): Promise<void> {
+    const fail = (error: string) => {
+      job.status = 'failed';
+      job.error = error;
+      job.message = error;
+    };
+
     const sepoliaDeployments = getDeployedSepolia();
     const creditcoinDeployments = getDeployedCreditcoin();
-
     const collateralLockAddress =
       sepoliaDeployments.collateralLock || sepoliaDeployments.CollateralLock;
     const crossVaultAddress =
       creditcoinDeployments.crossVault || creditcoinDeployments.CrossVault;
 
     if (!collateralLockAddress) {
-      return res.status(500).json({
-        error: 'CollateralLock address not found in deployed-sepolia.json',
-      });
+      fail('CollateralLock address not found in deployed-sepolia.json');
+      return;
     }
-
     if (!crossVaultAddress) {
-      return res.status(500).json({
-        error: 'CrossVault address not found in deployed-creditcoin.json',
-      });
+      fail('CrossVault address not found in deployed-creditcoin.json');
+      return;
     }
 
-    // 2. Query Sepolia for Locked event log matching lockId
-    let targetLog: ethers.Log | null = null;
+    job.message = `Finding Sepolia lock #${lockId}`;
+    let blockNumber: number | null = requestedBlock;
+    let transactionHash: string | null = requestedTxHash;
+
     try {
       const lockedEventTopic = collateralLockInterface.getEvent('Locked')!.topicHash;
       const lockIdTopic = ethers.zeroPadValue(ethers.toBeHex(lockIdBigInt), 32);
 
-      let logs: ethers.Log[];
-      if (deps.getSepoliaLogs) {
-        logs = await deps.getSepoliaLogs({
-          address: collateralLockAddress,
-          topics: [lockedEventTopic, lockIdTopic],
-        });
-      } else {
+      if (requestedTxHash && !deps.getSepoliaLogs) {
         const sepoliaProvider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
-        const latestBlock = await sepoliaProvider.getBlockNumber();
-        const fromBlock = Math.max(0, latestBlock - 50000);
-
-        logs = await sepoliaProvider.getLogs({
-          address: collateralLockAddress,
-          topics: [lockedEventTopic, lockIdTopic],
-          fromBlock,
-          toBlock: 'latest',
-        });
+        const receipt = await sepoliaProvider.getTransactionReceipt(requestedTxHash);
+        if (receipt) {
+          for (const log of receipt.logs) {
+            if (log.address.toLowerCase() !== collateralLockAddress.toLowerCase()) continue;
+            if (log.topics[0] !== lockedEventTopic) continue;
+            if (log.topics[1] && log.topics[1].toLowerCase() === lockIdTopic.toLowerCase()) {
+              blockNumber = receipt.blockNumber;
+              transactionHash = receipt.hash;
+              break;
+            }
+          }
+        }
       }
 
-      if (logs && logs.length > 0) {
-        targetLog = logs[0];
+      if (!transactionHash || !blockNumber) {
+        let logs: ethers.Log[];
+        if (deps.getSepoliaLogs) {
+          logs = await deps.getSepoliaLogs({
+            address: collateralLockAddress,
+            topics: [lockedEventTopic, lockIdTopic],
+          });
+        } else {
+          const sepoliaProvider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
+          const latestBlock = await sepoliaProvider.getBlockNumber();
+          const fromBlock = Math.max(0, latestBlock - 3000);
+          logs = await sepoliaProvider.getLogs({
+            address: collateralLockAddress,
+            topics: [lockedEventTopic, lockIdTopic],
+            fromBlock,
+            toBlock: 'latest',
+          });
+        }
+        if (logs && logs.length > 0) {
+          blockNumber = logs[0].blockNumber;
+          transactionHash = logs[0].transactionHash;
+        }
       }
     } catch (err: any) {
       console.error(`[Relayer] Error fetching Sepolia logs for lockId ${lockId}:`, err);
-      return res.status(500).json({
-        error: `Failed to query Sepolia logs: ${err.message}`,
-      });
+      fail(`Failed to query Sepolia logs: ${err.message}`);
+      return;
     }
 
-    if (!targetLog) {
+    if (!transactionHash || !blockNumber) {
       console.warn(`[Relayer] Locked event not found on Sepolia for lockId ${lockId}`);
-      return res.status(404).json({
-        error: `Sepolia Locked event log not found for lockId ${lockId}`,
-      });
+      fail(`Sepolia Locked event log not found for lockId ${lockId}`);
+      return;
     }
 
-    const blockNumber = targetLog.blockNumber;
-    const transactionHash = targetLog.transactionHash;
+    job.message = `Waiting for Sepolia block ${blockNumber} to be attested on Creditcoin. This can take several minutes.`;
     console.log(`[Relayer] Found Locked log at block ${blockNumber}, tx ${transactionHash}`);
 
-    // 3. Request proof from USC Prover API
     let proof: TxProofPayload;
     try {
       const fetchProofFn = deps.fetchProof || fetchSepoliaProof;
       proof = await fetchProofFn(transactionHash, blockNumber);
     } catch (err: any) {
       console.error(`[Relayer] Prover API error for tx ${transactionHash}:`, err);
-      return res.status(502).json({
-        error: `USC Prover API failed: ${err.message || 'Unknown error'}`,
-      });
+      fail(`USC Prover API failed: ${err.message || 'Unknown error'}`);
+      return;
     }
 
-    // 4. Submit proof to CrossVault.openPosition on Creditcoin 3
+    job.message = `Submitting openPosition(${lockId}) on Creditcoin`;
     try {
       if (deps.submitOpenPosition) {
         const result = await deps.submitOpenPosition(crossVaultAddress, lockIdBigInt, proof);
-        return res.status(200).json({
-          success: true,
-          transactionHash: result.hash,
-          positionId: result.positionId,
-        });
+        job.status = 'completed';
+        job.transactionHash = result.hash;
+        job.positionId = result.positionId;
+        job.message = `Position #${result.positionId} opened`;
+        return;
       }
 
       if (!CC3_PRIVATE_KEY) {
-        return res.status(500).json({
-          error: 'CC3_PRIVATE_KEY is not configured in environment',
-        });
+        fail('CC3_PRIVATE_KEY is not configured in environment');
+        return;
       }
 
       const cc3Provider = new ethers.JsonRpcProvider(CC3_TESTNET_RPC_URL);
@@ -192,11 +269,10 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
       const crossVault = new ethers.Contract(crossVaultAddress, CROSS_VAULT_ABI, signer);
 
       console.log(`[Relayer] Submitting openPosition(${lockId}) to CrossVault at ${crossVaultAddress}...`);
-      const tx = await crossVault.openPosition(lockIdBigInt, proof);
+      const tx = await crossVault.openPosition(lockIdBigInt, proof, { gasPrice: 2000000000n });
       console.log(`[Relayer] Transaction broadcast: ${tx.hash}. Waiting for confirmation...`);
       const receipt = await tx.wait();
 
-      // Decode positionId from PositionOpened event or query view
       let positionId: string | null = null;
       if (receipt && receipt.logs) {
         for (const log of receipt.logs) {
@@ -217,20 +293,17 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
         } catch {}
       }
 
+      job.status = 'completed';
+      job.transactionHash = receipt.hash;
+      job.positionId = positionId || 'unknown';
+      job.message = `Position #${job.positionId} opened`;
       console.log(`[Relayer] Successfully opened position #${positionId} in tx ${receipt.hash}`);
-      return res.status(200).json({
-        success: true,
-        transactionHash: receipt.hash,
-        positionId: positionId || 'unknown',
-      });
     } catch (err: any) {
       const decodedReason = decodeRevertReason(err, crossVaultInterface);
       console.error(`[Relayer] openPosition reverted: ${decodedReason}`, err);
-      return res.status(409).json({
-        error: decodedReason,
-      });
+      fail(decodedReason);
     }
-  });
+  }
 
   /**
    * POST /attest/price

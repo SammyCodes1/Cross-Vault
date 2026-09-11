@@ -99,13 +99,26 @@ describe('Relayer Service Unit & API Tests', () => {
     });
   });
 
-  describe('Endpoint Error & Success Handling', () => {
+  async function awaitLockJob(app: any, lockId: string) {
+  const start = await request(app).post(`/attest/lock/${lockId}`);
+  if (start.status !== 202) return start;
+  const jobId = start.body.jobId;
+  for (let i = 0; i < 40; i++) {
+    const st = await request(app).get(`/attest/jobs/${jobId}`);
+    if (st.body.status === 'completed' || st.body.status === 'failed') return st;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error('attestation job did not settle');
+}
+
+describe('Endpoint Error & Success Handling', () => {
     it('POST /attest/lock/:lockId returns 404 when log does not exist on Sepolia', async () => {
       const testApp = createRelayerApp({
         getSepoliaLogs: async () => [],
       });
-      const res = await request(testApp).post('/attest/lock/1');
-      assert.strictEqual(res.status, 404);
+      const res = await awaitLockJob(testApp, '1');
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.status, 'failed');
       assert.ok(res.body.error.includes('Sepolia Locked event log not found'));
     });
 
@@ -116,8 +129,9 @@ describe('Relayer Service Unit & API Tests', () => {
           throw new Error('Prover timeout or network error');
         },
       });
-      const res = await request(testApp).post('/attest/lock/1');
-      assert.strictEqual(res.status, 502);
+      const res = await awaitLockJob(testApp, '1');
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.status, 'failed');
       assert.ok(res.body.error.includes('USC Prover API failed: Prover timeout or network error'));
     });
 
@@ -132,8 +146,9 @@ describe('Relayer Service Unit & API Tests', () => {
           throw err;
         },
       });
-      const res = await request(testApp).post('/attest/lock/1');
-      assert.strictEqual(res.status, 409);
+      const res = await awaitLockJob(testApp, '1');
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.status, 'failed');
       assert.strictEqual(res.body.error, 'LockAlreadyUsed');
     });
 
@@ -148,8 +163,9 @@ describe('Relayer Service Unit & API Tests', () => {
           throw err;
         },
       });
-      const res = await request(testApp).post('/attest/lock/1');
-      assert.strictEqual(res.status, 409);
+      const res = await awaitLockJob(testApp, '1');
+      assert.strictEqual(res.status, 200);
+      assert.strictEqual(res.body.status, 'failed');
       assert.strictEqual(res.body.error, 'VerificationFailed');
     });
 
@@ -162,9 +178,9 @@ describe('Relayer Service Unit & API Tests', () => {
           positionId: '1',
         }),
       });
-      const res = await request(testApp).post('/attest/lock/1');
+      const res = await awaitLockJob(testApp, '1');
       assert.strictEqual(res.status, 200);
-      assert.strictEqual(res.body.success, true);
+      assert.strictEqual(res.body.status, 'completed');
       assert.strictEqual(res.body.transactionHash, '0x' + '2'.repeat(64));
       assert.strictEqual(res.body.positionId, '1');
     });
@@ -283,7 +299,7 @@ describe('Relayer Service Unit & API Tests', () => {
       });
       for (let i = 0; i < 8; i++) {
         const ok = await request(testApp).post('/attest/lock/1');
-        assert.strictEqual(ok.status, 200);
+        assert.strictEqual(ok.status, 202);
       }
       const limited = await request(testApp).post('/attest/lock/1');
       assert.strictEqual(limited.status, 429);

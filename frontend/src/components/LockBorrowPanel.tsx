@@ -185,24 +185,52 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
       setLastLockId(lockId);
       setStatusMessage(`Collateral locked on Sepolia with Lock ID #${lockId}!`);
 
-      // 4. Submit to Relayer for attestation & Creditcoin verification
       setCurrentStep('attesting');
-      setStatusMessage(`Requesting USC Prover proof for Lock #${lockId}...`);
+      setStatusMessage(
+        `Waiting for Creditcoin to attest Sepolia block ${receipt.blockNumber}. This can take several minutes.`
+      );
 
       const relayerRes = await fetch(`${RELAYER_BASE_URL}/attest/lock/${lockId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionHash: lockTx.hash,
+          blockNumber: receipt.blockNumber,
+        }),
       });
 
-      if (!relayerRes.ok) {
-        const errJson = await relayerRes.json().catch(() => null);
-        throw new Error(errJson?.error || `Relayer returned HTTP status ${relayerRes.status}`);
+      const relayerJson = await relayerRes.json().catch(() => null);
+      if (!relayerRes.ok && relayerRes.status !== 202) {
+        throw new Error(relayerJson?.error || `Relayer returned HTTP status ${relayerRes.status}`);
+      }
+
+      let relayerData = relayerJson || {};
+      if (relayerRes.status === 202 && relayerJson?.jobId) {
+        const deadline = Date.now() + 15 * 60 * 1000;
+        while (Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          const jobRes = await fetch(`${RELAYER_BASE_URL}/attest/jobs/${relayerJson.jobId}`);
+          const job = await jobRes.json().catch(() => null);
+          if (!jobRes.ok || !job) {
+            throw new Error(job?.error || `Relayer job poll failed (${jobRes.status})`);
+          }
+          if (job.message) setStatusMessage(job.message);
+          if (job.status === 'completed') {
+            relayerData = job;
+            break;
+          }
+          if (job.status === 'failed') {
+            throw new Error(job.error || 'Attestation failed');
+          }
+        }
+        if (!relayerData.transactionHash && !relayerData.positionId) {
+          throw new Error('Attestation timed out waiting for the Creditcoin prover');
+        }
       }
 
       setCurrentStep('verifying');
       setStatusMessage('Submitting proof to CrossVault on Creditcoin 3...');
 
-      const relayerData = await relayerRes.json();
       setOpenedPositionId(relayerData.positionId || null);
       setCc3TxHash(relayerData.transactionHash || null);
 
