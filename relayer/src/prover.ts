@@ -17,32 +17,84 @@ export interface TxProofPayload {
   };
 }
 
+const POLL_MS = 2000;
+const EXTRA_DELAY_MS = 1500;
+const WAIT_TIMEOUT_MS = 900000;
+
+async function queryAttestedHeight(): Promise<number | null> {
+  const base = USC_PROVER_API_URL.replace(/\/$/, '');
+  const res = await fetch(`${base}/api/v1/attested-height/${SEPOLIA_CHAIN_KEY}`);
+  if (!res.ok) return null;
+  const data = (await res.json()) as { attestedHeight?: number };
+  return typeof data.attestedHeight === 'number' ? data.attestedHeight : null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
- * Requests an inclusion and continuity proof for a confirmed Sepolia transaction from the USC Prover API.
- * Follows the exact SDK calls verified in ATTESTCOIN_INTERFACE.md.
+ * Wait until Creditcoin has attested the Sepolia block, then fetch the proof.
+ * Still waits for the real attested height. Only the extra padding and poll
+ * interval are tightened so we notice readiness sooner.
  */
 export async function fetchSepoliaProof(
   transactionHash: string,
   blockHeight: number,
-  timeoutMs: number = 900000 // 15 minutes max wait
+  onProgress?: (message: string) => void
 ): Promise<TxProofPayload> {
   console.log(`[Prover] Initializing ProofBuilder for chain ${SEPOLIA_CHAIN_KEY} at ${USC_PROVER_API_URL}`);
   const proofBuilder = new proofProvider.service.ProofBuilder(
     SEPOLIA_CHAIN_KEY,
     USC_PROVER_API_URL,
-    30000 // 30s HTTP request timeout
+    30000
   );
 
-  console.log(`[Prover] Waiting for Sepolia block ${blockHeight} to be attested on CC3...`);
-  await proofBuilder.waitUntilHeightAttested(
-    SEPOLIA_CHAIN_KEY,
-    blockHeight,
-    5000, // 5s poll interval
-    timeoutMs
-  );
+  const started = Date.now();
+  onProgress?.(`Waiting for Creditcoin to attest Sepolia block ${blockHeight}`);
 
-  console.log(`[Prover] Requesting proof for tx ${transactionHash}...`);
-  const result: proofProvider.ProofResult = await proofBuilder.getProof(transactionHash);
+  while (true) {
+    if (Date.now() - started > WAIT_TIMEOUT_MS) {
+      throw new Error(`Timeout waiting for height ${blockHeight} to be attested`);
+    }
+
+    let latest: number | null = null;
+    try {
+      latest = await queryAttestedHeight();
+    } catch (err) {
+      console.warn('[Prover] attested-height query failed, retrying', err);
+    }
+
+    if (latest != null && latest >= blockHeight) {
+      onProgress?.(`Sepolia block ${blockHeight} attested. Fetching proof...`);
+      break;
+    }
+
+    const behind = latest == null ? '...' : String(blockHeight - latest);
+    const latestLabel = latest == null ? '...' : String(latest);
+    onProgress?.(
+      `Creditcoin attested ${latestLabel} / ${blockHeight}. ${behind} block${behind === '1' ? '' : 's'} behind.`
+    );
+    console.log(
+      `[Prover] Height ${blockHeight} not yet attested. Latest: ${latestLabel}. Retrying in ${POLL_MS}ms`
+    );
+    await sleep(POLL_MS);
+  }
+
+  const tryProof = async () => proofBuilder.getProof(transactionHash);
+
+  let result: proofProvider.ProofResult;
+  try {
+    result = await tryProof();
+  } catch {
+    await sleep(EXTRA_DELAY_MS);
+    result = await tryProof();
+  }
+
+  if (!result || !result.success || !result.data) {
+    await sleep(EXTRA_DELAY_MS);
+    result = await tryProof();
+  }
 
   if (!result || !result.success || !result.data) {
     const errorMsg = result?.error || 'USC Prover service returned no proof data';

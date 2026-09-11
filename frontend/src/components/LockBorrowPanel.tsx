@@ -228,7 +228,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
       if (relayerRes.status === 202 && relayerJson?.jobId) {
         const deadline = Date.now() + 15 * 60 * 1000;
         while (Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 3000));
+          await new Promise((resolve) => setTimeout(resolve, 1500));
           const jobRes = await fetch(`${RELAYER_BASE_URL}/attest/jobs/${relayerJson.jobId}`);
           const job = await jobRes.json().catch(() => null);
           if (!jobRes.ok || !job) {

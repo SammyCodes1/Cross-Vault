@@ -34,7 +34,11 @@ interface AttestJob {
 }
 
 export interface RelayerDependencies {
-  fetchProof?: (txHash: string, blockHeight: number) => Promise<TxProofPayload>;
+  fetchProof?: (
+    txHash: string,
+    blockHeight: number,
+    onProgress?: (message: string) => void
+  ) => Promise<TxProofPayload>;
   getSepoliaLogs?: (params: ethers.Filter) => Promise<ethers.Log[]>;
   submitOpenPosition?: (
     crossVaultAddress: string,
@@ -236,13 +240,15 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
       return;
     }
 
-    job.message = `Waiting for Sepolia block ${blockNumber} to be attested on Creditcoin. This can take several minutes.`;
+    job.message = `Waiting for Creditcoin to attest Sepolia block ${blockNumber}`;
     console.log(`[Relayer] Found Locked log at block ${blockNumber}, tx ${transactionHash}`);
 
     let proof: TxProofPayload;
     try {
       const fetchProofFn = deps.fetchProof || fetchSepoliaProof;
-      proof = await fetchProofFn(transactionHash, blockNumber);
+      proof = await fetchProofFn(transactionHash, blockNumber, (message) => {
+        job.message = message;
+      });
     } catch (err: any) {
       console.error(`[Relayer] Prover API error for tx ${transactionHash}:`, err);
       fail(`USC Prover API failed: ${err.message || 'Unknown error'}`);
