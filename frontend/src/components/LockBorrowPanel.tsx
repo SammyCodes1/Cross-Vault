@@ -6,8 +6,11 @@ import {
   MOCK_COLLATERAL_TOKEN_ABI,
   COLLATERAL_LOCK_ABI,
   RELAYER_BASE_URL,
+  VAULT_POSITION_ABI,
+  LEGACY_CROSS_VAULT,
 } from '../contracts/config';
 import { ProcessGlass, type ProcessStep } from './ProcessGlass';
+import type { VaultPosition } from './PositionDashboard';
 
 const LOCK_STEPS: ProcessStep[] = [
   { id: 'minting', label: 'Mint mWETH', hint: 'Faucet 1.0 if the wallet is short' },
@@ -27,6 +30,7 @@ interface LockBorrowPanelProps {
   collateralBalance: string;
   currentPrice: string;
   onRefresh: () => void;
+  onPositionOpened?: (row: VaultPosition) => void;
   onSwitchToSepolia: () => Promise<void>;
   getSigner: () => Promise<ethers.JsonRpcSigner | null>;
 }
@@ -47,6 +51,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
   collateralBalance,
   currentPrice,
   onRefresh,
+  onPositionOpened,
   onSwitchToSepolia,
   getSigner,
 }) => {
@@ -257,9 +262,50 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         'success',
         `Position #${relayerData.positionId} opened. Borrowed about ${calculateEstimatedDebt()} tvUSD.`
       );
+
+      const vaultAddr =
+        (typeof relayerData.vaultAddress === 'string' && relayerData.vaultAddress) ||
+        CONTRACT_ADDRESSES.CROSS_VAULT;
+      const openedId = Number(relayerData.positionId);
+      if (onPositionOpened && Number.isFinite(openedId) && openedId > 0) {
+        const cc3 = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
+        const vault = new Contract(vaultAddr, VAULT_POSITION_ABI, cc3);
+        let pulled = false;
+        for (let attempt = 0; attempt < 10 && !pulled; attempt++) {
+          try {
+            const pos = await vault.positions(openedId);
+            const owner = pos.owner ?? pos[0];
+            if (owner && owner !== ethers.ZeroAddress) {
+              const colEth = parseFloat(ethers.formatEther(pos.collateralAmount ?? pos[1]));
+              const debtUsd = parseFloat(ethers.formatEther(pos.debtAmount ?? pos[2]));
+              const priceNum = parseFloat(currentPrice);
+              onPositionOpened({
+                positionId: openedId,
+                owner,
+                collateralAmount: colEth.toFixed(4),
+                debtAmount: debtUsd.toFixed(2),
+                collateralRatio:
+                  debtUsd > 0 && priceNum > 0 ? ((colEth * priceNum) / debtUsd) * 100 : null,
+                liquidated: Boolean(pos.liquidated ?? pos[3]),
+                repaid: Boolean(pos.repaid ?? pos[4] ?? false),
+                isLiquidatable: false,
+                vault: vaultAddr,
+                legacy: vaultAddr.toLowerCase() === LEGACY_CROSS_VAULT.toLowerCase(),
+              });
+              pulled = true;
+            }
+          } catch {
+            /* RPC may lag one block */
+          }
+          if (!pulled) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+      }
+
       onRefresh();
-      window.setTimeout(onRefresh, 2000);
-      window.setTimeout(onRefresh, 6000);
+      window.setTimeout(onRefresh, 2500);
+      window.setTimeout(onRefresh, 8000);
     } catch (err: unknown) {
       console.error('Lock and borrow error:', err);
       goTo('error');

@@ -30,6 +30,7 @@ export const App: React.FC = () => {
   const [priceSource, setPriceSource] = useState<string>('None');
   const [positions, setPositions] = useState<VaultPosition[]>([]);
   const [isLoadingPositions, setIsLoadingPositions] = useState<boolean>(false);
+  const refreshSeq = React.useRef(0);
 
   // Helper to obtain signer from window.ethereum
   const getSigner = useCallback(async (): Promise<ethers.JsonRpcSigner | null> => {
@@ -221,6 +222,7 @@ export const App: React.FC = () => {
   };
 
   const refreshPositions = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     setIsLoadingPositions(true);
     try {
       const cc3Provider = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
@@ -239,14 +241,23 @@ export const App: React.FC = () => {
         }
       }
 
+      if (seq !== refreshSeq.current) return;
       setCurrentPrice(primary.price && primary.price !== '0.00' ? primary.price : '2550.71');
       setPriceSource(primary.source || 'None');
       setPositions([...primary.positions, ...legacyRows]);
     } catch (err) {
       console.error('Error refreshing positions from Creditcoin:', err);
     } finally {
-      setIsLoadingPositions(false);
+      if (seq === refreshSeq.current) setIsLoadingPositions(false);
     }
+  }, []);
+
+  const upsertPosition = useCallback((row: VaultPosition) => {
+    setPositions((prev) => {
+      const key = `${row.vault.toLowerCase()}-${row.positionId}`;
+      const rest = prev.filter((p) => `${p.vault.toLowerCase()}-${p.positionId}` !== key);
+      return [row, ...rest];
+    });
   }, []);
 
   const handleRefreshAll = useCallback(() => {
@@ -348,6 +359,7 @@ export const App: React.FC = () => {
               collateralBalance={collateralBalance}
               currentPrice={currentPrice}
               onRefresh={handleRefreshAll}
+              onPositionOpened={upsertPosition}
               onSwitchToSepolia={handleSwitchToSepolia}
               getSigner={getSigner}
             />
