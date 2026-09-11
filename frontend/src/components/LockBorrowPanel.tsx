@@ -295,8 +295,8 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
                 debtAmount: debtUsd.toFixed(2),
                 collateralRatio:
                   debtUsd > 0 && priceNum > 0 ? ((colEth * priceNum) / debtUsd) * 100 : null,
-                liquidated: Boolean(pos.liquidated ?? pos[3]),
-                repaid: Boolean(pos.repaid ?? pos[4] ?? false),
+                liquidated: Boolean(pos.liquidated ?? (pos.length > 3 ? pos[3] : false)),
+                repaid: Boolean(pos.repaid ?? (pos.length > 4 ? pos[4] : false)),
                 isLiquidatable: false,
                 vault: vaultAddr,
                 legacy: vaultAddr.toLowerCase() === LEGACY_CROSS_VAULT.toLowerCase(),

@@ -40,6 +40,14 @@ export const VAULT_POSITION_ABI = [
   'function nextPositionId() view returns (uint256)',
   'function currentPrice() view returns (uint256)',
   'function priceSource() view returns (string)',
+  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid)',
+  'function isLiquidatable(uint256 positionId) view returns (bool)',
+];
+
+export const LEGACY_VAULT_POSITION_ABI = [
+  'function nextPositionId() view returns (uint256)',
+  'function currentPrice() view returns (uint256)',
+  'function priceSource() view returns (string)',
   'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated)',
   'function isLiquidatable(uint256 positionId) view returns (bool)',
 ];

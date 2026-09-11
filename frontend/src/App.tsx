@@ -8,6 +8,7 @@ import {
   LEGACY_CROSS_VAULT,
   LEGACY_DEBT_TOKEN,
   VAULT_POSITION_ABI,
+  LEGACY_VAULT_POSITION_ABI,
 } from './contracts/config';
 import { WalletConnect } from './components/WalletConnect';
 import { LockBorrowPanel } from './components/LockBorrowPanel';
@@ -186,7 +187,8 @@ export const App: React.FC = () => {
     provider: ethers.Provider,
     legacy: boolean
   ): Promise<{ positions: VaultPosition[]; price: string | null; source: string | null }> => {
-    const vault = new Contract(vaultAddress, VAULT_POSITION_ABI, provider);
+    const abi = legacy ? LEGACY_VAULT_POSITION_ABI : VAULT_POSITION_ABI;
+    const vault = new Contract(vaultAddress, abi, provider);
     const [rawPrice, currentSource, nextPosId] = await Promise.all([
       vault.currentPrice(),
       vault.priceSource().catch(() => 'None'),
@@ -195,39 +197,53 @@ export const App: React.FC = () => {
     const formattedPrice = rawPrice > 0n ? ethers.formatEther(rawPrice) : '0';
     const priceNum = parseFloat(formattedPrice);
     const total = Number(nextPosId) - 1;
-    const rows: VaultPosition[] = [];
-
-    for (let i = 1; i <= total; i++) {
-      try {
-        const pos = await vault.positions(i);
-        let isLiq = false;
-        try {
-          isLiq = Boolean(await vault.isLiquidatable(i));
-        } catch {
-          isLiq = false;
-        }
-        const colEth = parseFloat(ethers.formatEther(pos.collateralAmount ?? pos[1]));
-        const debtUsd = parseFloat(ethers.formatEther(pos.debtAmount ?? pos[2]));
-        let ratio: number | null = null;
-        if (debtUsd > 0 && priceNum > 0) {
-          ratio = ((colEth * priceNum) / debtUsd) * 100;
-        }
-        rows.push({
-          positionId: i,
-          owner: pos.owner ?? pos[0],
-          collateralAmount: colEth.toFixed(4),
-          debtAmount: debtUsd.toFixed(2),
-          collateralRatio: ratio,
-          liquidated: Boolean(pos.liquidated ?? pos[3]),
-          repaid: Boolean(pos.repaid ?? pos[4] ?? false),
-          isLiquidatable: isLiq,
-          vault: vaultAddress,
-          legacy,
-        });
-      } catch (posErr) {
-        console.warn(`Error querying position ${i} on ${vaultAddress}:`, posErr);
-      }
+    if (total <= 0) {
+      return {
+        positions: [],
+        price: rawPrice > 0n ? priceNum.toFixed(2) : null,
+        source: currentSource || null,
+      };
     }
+
+    const posPromises: Promise<VaultPosition | null>[] = [];
+    for (let i = 1; i <= total; i++) {
+      posPromises.push(
+        (async () => {
+          try {
+            const [pos, isLiq] = await Promise.all([
+              vault.positions(i),
+              vault.isLiquidatable(i).catch(() => false),
+            ]);
+            const colEth = parseFloat(ethers.formatEther(pos.collateralAmount ?? pos[1] ?? 0n));
+            const debtUsd = parseFloat(ethers.formatEther(pos.debtAmount ?? pos[2] ?? 0n));
+            let ratio: number | null = null;
+            if (debtUsd > 0 && priceNum > 0) {
+              ratio = ((colEth * priceNum) / debtUsd) * 100;
+            }
+            const isRepaid = !legacy && pos.length > 4 ? Boolean(pos[4]) : Boolean(pos.repaid ?? false);
+            const isLiquidated = Boolean(pos.liquidated ?? (pos.length > 3 ? pos[3] : false));
+            return {
+              positionId: i,
+              owner: pos.owner ?? pos[0],
+              collateralAmount: colEth.toFixed(4),
+              debtAmount: debtUsd.toFixed(2),
+              collateralRatio: ratio,
+              liquidated: isLiquidated,
+              repaid: isRepaid,
+              isLiquidatable: Boolean(isLiq),
+              vault: vaultAddress,
+              legacy,
+            };
+          } catch (posErr) {
+            console.warn(`Error querying position ${i} on ${vaultAddress}:`, posErr);
+            return null;
+          }
+        })()
+      );
+    }
+
+    const resolved = await Promise.all(posPromises);
+    const rows = resolved.filter((r): r is VaultPosition => r !== null);
 
     return {
       positions: rows,
