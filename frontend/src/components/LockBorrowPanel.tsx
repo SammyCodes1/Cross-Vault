@@ -7,6 +7,19 @@ import {
   COLLATERAL_LOCK_ABI,
   RELAYER_BASE_URL,
 } from '../contracts/config';
+import { ProcessGlass, type ProcessStep } from './ProcessGlass';
+
+const LOCK_STEPS: ProcessStep[] = [
+  { id: 'minting', label: 'Mint mWETH', hint: 'Faucet 1.0 if the wallet is short' },
+  { id: 'approving', label: 'Approve lock', hint: 'Exact amount to CollateralLock' },
+  { id: 'locking', label: 'Lock on Sepolia', hint: 'Escrow collateral and emit a lock id' },
+  { id: 'attesting', label: 'Attest proof', hint: 'Wait for Creditcoin to prove the block' },
+  { id: 'verifying', label: 'Borrow tvUSD', hint: 'Open the position on Creditcoin 3' },
+];
+
+const MINT_STEPS: ProcessStep[] = [
+  { id: 'minting', label: 'Mint mWETH', hint: '1.0 testnet tokens to this wallet' },
+];
 
 interface LockBorrowPanelProps {
   account: string | null;
@@ -44,8 +57,18 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
   const [openedPositionId, setOpenedPositionId] = useState<number | null>(null);
   const [cc3TxHash, setCc3TxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [flowKind, setFlowKind] = useState<'lock' | 'mint'>('lock');
+  const [processId, setProcessId] = useState<StepState>('locking');
 
   const isSepolia = chainId === NETWORKS.SEPOLIA.chainId;
+
+  const goTo = (step: StepState, message?: string) => {
+    setCurrentStep(step);
+    if (step !== 'idle' && step !== 'success' && step !== 'error') {
+      setProcessId(step);
+    }
+    if (message) setStatusMessage(message);
+  };
 
   // Calculate estimated debt: (amount * currentPrice * 100) / 150
   const calculateEstimatedDebt = (): string => {
@@ -72,8 +95,8 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
       const signer = await getSigner();
       if (!signer) throw new Error('No signer available');
 
-      setCurrentStep('minting');
-      setStatusMessage('Minting 1.0 mWETH for testnet...');
+      setFlowKind('mint');
+      goTo('minting', 'Minting 1.0 mWETH for testnet...');
 
       const tokenContract = new Contract(
         CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
@@ -85,12 +108,11 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
       setStatusMessage('Waiting for mint confirmation on Sepolia...');
       await tx.wait();
 
-      setStatusMessage('1.0 mWETH minted successfully!');
-      setCurrentStep('idle');
+      goTo('success', '1.0 mWETH minted to this wallet.');
       onRefresh();
     } catch (err: unknown) {
       console.error('Mint error:', err);
-      setCurrentStep('error');
+      goTo('error');
       setErrorMessage(err instanceof Error ? err.message : String(err));
     }
   };
@@ -101,11 +123,12 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     setOpenedPositionId(null);
     setCc3TxHash(null);
     setLastLockId(null);
+    setFlowKind('lock');
+    goTo('approving', 'Preparing lock and borrow...');
 
     try {
-      // 0. Ensure we are on Sepolia
       if (!isSepolia) {
-        setStatusMessage('Switching to Sepolia network...');
+        goTo('approving', 'Switching to Sepolia...');
         await onSwitchToSepolia();
       }
 
@@ -126,16 +149,14 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
       // 1. Check user balance; if 0, mint 1.0 mWETH as testnet convenience
       const balance: bigint = await tokenContract.balanceOf(account);
       if (balance === 0n || balance < parsedAmount) {
-        setCurrentStep('minting');
-        setStatusMessage(`Balance low (${ethers.formatEther(balance)} mWETH). Minting 1.0 mWETH for testnet...`);
+        goTo('minting', `Balance low (${ethers.formatEther(balance)} mWETH). Minting 1.0 mWETH...`);
         const mintTx = await tokenContract.mint(account, ethers.parseEther('1.0'));
         await mintTx.wait();
         setStatusMessage('Minted 1.0 mWETH. Continuing lock process...');
       }
 
       // 2. Check and approve CollateralLock contract
-      setCurrentStep('approving');
-      setStatusMessage(`Checking allowance for CollateralLock...`);
+      goTo('approving', 'Checking allowance for CollateralLock...');
       const currentAllowance: bigint = await tokenContract.allowance(
         account,
         CONTRACT_ADDRESSES.COLLATERAL_LOCK
@@ -152,8 +173,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
       }
 
       // 3. Call CollateralLock.lock(amount)
-      setCurrentStep('locking');
-      setStatusMessage(`Locking ${amount} mWETH into escrow on Sepolia...`);
+      goTo('locking', `Locking ${amount} mWETH into escrow on Sepolia...`);
       const lockContract = new Contract(
         CONTRACT_ADDRESSES.COLLATERAL_LOCK,
         COLLATERAL_LOCK_ABI,
@@ -185,8 +205,8 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
       setLastLockId(lockId);
       setStatusMessage(`Collateral locked on Sepolia with Lock ID #${lockId}!`);
 
-      setCurrentStep('attesting');
-      setStatusMessage(
+      goTo(
+        'attesting',
         `Waiting for Creditcoin to attest Sepolia block ${receipt.blockNumber}. This can take several minutes.`
       );
 
@@ -228,30 +248,31 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         }
       }
 
-      setCurrentStep('verifying');
-      setStatusMessage('Submitting proof to CrossVault on Creditcoin 3...');
+      goTo('verifying', 'Submitting proof to CrossVault on Creditcoin 3...');
 
       setOpenedPositionId(relayerData.positionId || null);
       setCc3TxHash(relayerData.transactionHash || null);
 
-      setCurrentStep('success');
-      setStatusMessage(
-        `Position #${relayerData.positionId} opened on Creditcoin! Borrowed ${calculateEstimatedDebt()} tvUSD.`
+      goTo(
+        'success',
+        `Position #${relayerData.positionId} opened. Borrowed about ${calculateEstimatedDebt()} tvUSD.`
       );
       onRefresh();
     } catch (err: unknown) {
       console.error('Lock and borrow error:', err);
-      setCurrentStep('error');
+      goTo('error');
       setErrorMessage(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const isBusy =
-    currentStep === 'minting' ||
-    currentStep === 'approving' ||
-    currentStep === 'locking' ||
-    currentStep === 'attesting' ||
-    currentStep === 'verifying';
+  const isBusy = currentStep !== 'idle';
+  const sheetStatus =
+    currentStep === 'success' ? 'success' : currentStep === 'error' ? 'error' : 'running';
+  const processSteps = flowKind === 'mint' ? MINT_STEPS : LOCK_STEPS;
+
+  const dismissSheet = () => {
+    setCurrentStep('idle');
+  };
 
   return (
     <div className="card">
@@ -307,61 +328,37 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
           </div>
         </div>
 
-        {/* Stepper / Progress display */}
-        {currentStep !== 'idle' && (
-          <div className={`status-box status-${currentStep}`}>
-            <div className="stepper">
-              <div className={`step-item ${currentStep === 'locking' || currentStep === 'attesting' || currentStep === 'verifying' || currentStep === 'success' ? 'done' : currentStep === 'approving' ? 'active' : ''}`}>
-                <span className="step-circle">1</span>
-                <span className="step-label">Locking (Sepolia)</span>
-              </div>
-              <div className="step-line" />
-              <div className={`step-item ${currentStep === 'verifying' || currentStep === 'success' ? 'done' : currentStep === 'attesting' ? 'active' : ''}`}>
-                <span className="step-circle">2</span>
-                <span className="step-label">Attesting (Prover)</span>
-              </div>
-              <div className="step-line" />
-              <div className={`step-item ${currentStep === 'success' ? 'done' : currentStep === 'verifying' ? 'active' : ''}`}>
-                <span className="step-circle">3</span>
-                <span className="step-label">Verifying (Creditcoin)</span>
-              </div>
-            </div>
-
-            <p className="status-text">{statusMessage}</p>
-
-            {lastLockId && (
-              <p className="info-sub">
-                Sepolia Lock ID: <strong>#{lastLockId}</strong>
+        {openedPositionId && currentStep === 'idle' && (
+          <div className="success-details">
+            <p>
+              Last position: <strong>#{openedPositionId}</strong>
+              {lastLockId ? ` from lock #${lastLockId}` : ''}
+            </p>
+            {cc3TxHash && (
+              <p>
+                CC3 Tx:{' '}
+                <a
+                  href={`${NETWORKS.CREDITCOIN.blockExplorerUrls[0]}/tx/${cc3TxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {cc3TxHash.slice(0, 16)}...
+                </a>
               </p>
             )}
-
-            {openedPositionId && (
-              <div className="success-details">
-                <p>
-                  Creditcoin Position ID: <strong>#{openedPositionId}</strong>
-                </p>
-                {cc3TxHash && (
-                  <p>
-                    CC3 Tx:{' '}
-                    <a
-                      href={`${NETWORKS.CREDITCOIN.blockExplorerUrls[0]}/tx/${cc3TxHash}`}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {cc3TxHash.slice(0, 16)}...
-                    </a>
-                  </p>
-                )}
-              </div>
-            )}
           </div>
         )}
 
-        {errorMessage && (
-          <div className="error-box">
-            <strong>Error:</strong> {errorMessage}
-          </div>
-        )}
+        <ProcessGlass
+          open={currentStep !== 'idle'}
+          title={flowKind === 'mint' ? 'Mint mWETH' : 'Lock and borrow'}
+          steps={processSteps}
+          currentId={processId}
+          status={sheetStatus}
+          message={statusMessage}
+          error={errorMessage}
+          onDismiss={dismissSheet}
+        />
 
         <button
           type="button"
