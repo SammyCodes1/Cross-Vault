@@ -573,6 +573,43 @@ contract CrossVaultTest is Test {
         assertEq(crossVault.priceSource(), "Pyth");
     }
 
+    function test_UpdatePriceFromPyth_SkipsNonEthFeedsInSameTx() public {
+        address pythSepolia = crossVault.PYTH_CONTRACT_SEPOLIA();
+        bytes32 ethFeed = crossVault.PYTH_ETH_FEED_ID();
+        bytes32 otherFeed = bytes32(uint256(0x1111));
+
+        bytes32[] memory otherTopics = new bytes32[](2);
+        otherTopics[0] = crossVault.PYTH_PRICE_FEED_UPDATE_TOPIC();
+        otherTopics[1] = otherFeed;
+
+        bytes32[] memory ethTopics = new bytes32[](2);
+        ethTopics[0] = crossVault.PYTH_PRICE_FEED_UPDATE_TOPIC();
+        ethTopics[1] = ethFeed;
+
+        CrossVault.LogEntry[] memory logs = new CrossVault.LogEntry[](2);
+        logs[0] = CrossVault.LogEntry({
+            emitter: pythSepolia,
+            topics: otherTopics,
+            data: abi.encode(uint64(block.timestamp), int64(1), uint64(1))
+        });
+        logs[1] = CrossVault.LogEntry({
+            emitter: pythSepolia,
+            topics: ethTopics,
+            data: abi.encode(uint64(block.timestamp), int64(250000000000), uint64(1))
+        });
+
+        TxProof memory proof = TxProof({
+            height: 200,
+            encodedTx: abi.encode(logs),
+            merkleProof: MerkleProof({root: keccak256("batched-pyth"), siblings: new MerkleProofEntry[](0)}),
+            continuityProof: ContinuityProof({lowerEndpointDigest: bytes32(0), roots: new bytes32[](0)})
+        });
+
+        crossVault.updatePriceFromPyth(proof);
+        assertEq(crossVault.currentPrice(), 2500 ether);
+        assertEq(crossVault.priceSource(), "Pyth");
+    }
+
     /**
      * @notice Rejection test: Revert if Pyth proof points to wrong contract address on Sepolia.
      */

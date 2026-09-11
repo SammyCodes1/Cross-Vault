@@ -48,9 +48,19 @@ async function deployToCreditcoin() {
     )
   );
 
-  const debtTokenAddress = '0xCC4606AD0F663f5f8316511416B349cf49204bE6';
-  const debtToken = new ethers.Contract(debtTokenAddress, debtTokenArtifact.abi, signer);
-  console.log(`Using deployed DebtToken at: ${debtTokenAddress}`);
+  const gas = { gasPrice: ethers.parseUnits('2', 'gwei') };
+
+  console.log('\n--- 1. Deploying DebtToken ---');
+  const debtTokenFactory = new ethers.ContractFactory(
+    debtTokenArtifact.abi,
+    debtTokenArtifact.bytecode.object,
+    signer
+  );
+  const debtToken = await debtTokenFactory.deploy(ethers.ZeroAddress, gas);
+  console.log(`DebtToken tx: ${debtToken.deploymentTransaction()?.hash}`);
+  await debtToken.waitForDeployment();
+  const debtTokenAddress = await debtToken.getAddress();
+  console.log(`DebtToken deployed to: ${debtTokenAddress}`);
 
   console.log('\n--- 2. Deploying CrossVault ---');
   const crossVaultFactory = new ethers.ContractFactory(
@@ -62,21 +72,19 @@ async function deployToCreditcoin() {
     collateralLockAddress,
     priceFeedAddress,
     debtTokenAddress,
-    1n, // Sepolia chain key
-    { gasPrice: ethers.parseUnits('2', 'gwei') }
+    1n,
+    gas
   );
-  console.log(`Transaction sent: ${crossVault.deploymentTransaction()?.hash}`);
+  console.log(`CrossVault tx: ${crossVault.deploymentTransaction()?.hash}`);
   await crossVault.waitForDeployment();
   const crossVaultAddress = await crossVault.getAddress();
   console.log(`CrossVault deployed to: ${crossVaultAddress}`);
 
-  console.log('\n--- 3. Setting CrossVault as authorized Vault on DebtToken ---');
-  const setVaultTx = await (debtToken as any).setVault(crossVaultAddress, {
-    gasPrice: ethers.parseUnits('2', 'gwei')
-  });
+  console.log('\n--- 3. Binding CrossVault as DebtToken vault ---');
+  const setVaultTx = await (debtToken as any).setVault(crossVaultAddress, gas);
   console.log(`setVault tx: ${setVaultTx.hash}`);
   await setVaultTx.wait();
-  console.log('CrossVault successfully bound as vault on DebtToken.');
+  console.log('Vault bound.');
 
   const deployedCreditcoin = {
     network: 'creditcoin3-testnet',

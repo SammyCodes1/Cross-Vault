@@ -332,13 +332,9 @@ export const App: React.FC = () => {
             />
 
             <PriceControl
-              account={account}
-              chainId={chainId}
               currentVaultPrice={currentPrice}
               priceSource={priceSource}
               onRefresh={handleRefreshAll}
-              onSwitchToSepolia={handleSwitchToSepolia}
-              getSigner={getSigner}
             />
           </div>
 

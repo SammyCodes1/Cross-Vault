@@ -10,7 +10,7 @@ import {PythStructs} from "@pythnetwork/pyth-sdk-solidity/PythStructs.sol";
  * @notice Forge script to update and verify the Pyth ETH/USD price feed on Ethereum Sepolia.
  */
 contract UpdatePythPrice is Script {
-    address public constant PYTH_SEPOLIA = 0xDd24F84d36BF92C65F92307595335bdFab5Bbd21;
+    address public constant PYTH_SEPOLIA = 0xBb86bCc951A62DF86826219d9251Ee05F2c1e286;
     bytes32 public constant ETH_USD_FEED_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
 
     function run() external {

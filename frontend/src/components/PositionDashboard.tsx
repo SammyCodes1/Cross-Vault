@@ -193,7 +193,7 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
               <span className="price-value">${currentPrice} tvUSD</span>
             </div>
             <div className={`price-source-badge price-source-${priceSource.toLowerCase()}`}>
-              Price source: {priceSource === 'Pyth' ? 'Pyth (live)' : priceSource === 'Manual' ? 'Manual (demo)' : 'None'}
+              Price source: {priceSource === 'Pyth' ? 'Pyth' : priceSource === 'Manual' ? 'Not Pyth' : 'None'}
             </div>
           </div>
           <button

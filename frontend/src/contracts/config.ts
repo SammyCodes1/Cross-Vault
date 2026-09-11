@@ -24,12 +24,20 @@ export const CONTRACT_ADDRESSES = {
   MOCK_PRICE_FEED: '0x5Eb309a76C6E993293CD756d938BBb35F3bFd35f',
 
   // Creditcoin 3 Testnet (Chain ID 102031)
-  DEBT_TOKEN: '0xD709d29D35D99370f75770fC48dBEa3aE6277eB4',
-  CROSS_VAULT: '0x4D7F912075EF21A400125821f1dA303DF7e1444A',
+  DEBT_TOKEN: '0x50e92780cC16A9c04e9eE03c45b405C9DA4c44e1',
+  CROSS_VAULT: '0x7AC8AAfFb8763581B5a28E466359c5DE070E3BC3',
 } as const;
 
 export const RELAYER_BASE_URL =
-  (import.meta.env.VITE_RELAYER_URL as string) || 'http://localhost:3001';
+  (import.meta.env.VITE_RELAYER_URL as string) || 'https://cross-vault.onrender.com';
+
+export const PYTH_CONTRACT_SEPOLIA = '0xBb86bCc951A62DF86826219d9251Ee05F2c1e286';
+export const PYTH_ETH_FEED_ID =
+  '0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace';
+
+export const IPYTH_ABI = [
+  'function getPriceUnsafe(bytes32 id) view returns (tuple(int64 price, uint64 conf, int32 expo, uint256 publishTime))',
+];
 
 export const MOCK_COLLATERAL_TOKEN_ABI = [
   'function name() view returns (string)',

@@ -394,7 +394,7 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
       } else {
         const sepoliaProvider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
         const latestBlock = await sepoliaProvider.getBlockNumber();
-        const fromBlock = Math.max(0, latestBlock - 50000);
+        const fromBlock = Math.max(0, latestBlock - 3000);
 
         logs = await sepoliaProvider.getLogs({
           address: PYTH_CONTRACT_SEPOLIA,

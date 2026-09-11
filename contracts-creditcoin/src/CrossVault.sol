@@ -35,7 +35,7 @@ contract CrossVault {
     bytes32 public constant PRICE_UPDATED_EVENT_TOPIC = keccak256("PriceUpdated(uint256,uint256)");
 
     // Pyth Network constants on Ethereum Sepolia
-    address public constant PYTH_CONTRACT_SEPOLIA = 0xDd24F84d36BF92C65F92307595335bdFab5Bbd21;
+    address public constant PYTH_CONTRACT_SEPOLIA = 0xBb86bCc951A62DF86826219d9251Ee05F2c1e286;
     bytes32 public constant PYTH_ETH_FEED_ID = 0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace;
     // PriceFeedUpdate(bytes32 indexed id, uint64 publishTime, int64 price, uint64 conf)
     bytes32 public constant PYTH_PRICE_FEED_UPDATE_TOPIC = keccak256("PriceFeedUpdate(bytes32,uint64,int64,uint64)");
@@ -485,14 +485,17 @@ contract CrossVault {
     }
 
     function _pythPriceFromLogs(LogEntry[] memory logs) internal pure returns (bool found, int64 rawPrice) {
+        bool sawPythTopic;
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].topics.length >= 2 && logs[i].topics[0] == PYTH_PRICE_FEED_UPDATE_TOPIC) {
                 if (logs[i].emitter != PYTH_CONTRACT_SEPOLIA) revert WrongContract();
-                if (logs[i].topics[1] != PYTH_ETH_FEED_ID) revert WrongFeedId();
+                sawPythTopic = true;
+                if (logs[i].topics[1] != PYTH_ETH_FEED_ID) continue;
                 (, rawPrice, ) = abi.decode(logs[i].data, (uint64, int64, uint64));
                 return (true, rawPrice);
             }
         }
+        if (sawPythTopic) revert WrongFeedId();
     }
 
     function _revertIfSpecificReason(bytes memory reason) internal pure {
