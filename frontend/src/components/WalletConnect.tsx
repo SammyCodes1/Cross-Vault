@@ -45,7 +45,7 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
   };
 
   return (
-    <header className="header-container">
+    <header className={`header-container${account ? ' is-connected' : ''}`}>
       <a className="brand" href="/">
         <svg className="vault-mark" viewBox="0 0 32 32" aria-hidden="true">
           <rect x="7" y="7" width="18" height="18" rx="2" fill="none" stroke="#c45c26" strokeWidth="1.6" />
@@ -57,40 +57,18 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
         </div>
       </a>
 
-      <div className="wallet-actions">
+      <div className="header-tools">
         <ThemeToggle />
         {account ? (
-          <>
-            <div className="network-info">
-              {getNetworkBadge()}
-              <div className="network-switchers">
-                <button
-                  type="button"
-                  className={`btn-sm ${chainId === NETWORKS.SEPOLIA.chainId ? 'btn-active' : ''}`}
-                  onClick={onSwitchToSepolia}
-                >
-                  Sepolia
-                </button>
-                <button
-                  type="button"
-                  className={`btn-sm ${chainId === NETWORKS.CREDITCOIN.chainId ? 'btn-active' : ''}`}
-                  onClick={onSwitchToCC3}
-                >
-                  Creditcoin 3
-                </button>
-              </div>
-            </div>
-
-            <div className="account-pill">
-              <span className="account-dot" />
-              <span className="account-address">
-                {account.slice(0, 6)}...{account.slice(-4)}
-              </span>
-              <button type="button" className="btn-icon" title="Disconnect" onClick={onDisconnect}>
-                ✕
-              </button>
-            </div>
-          </>
+          <div className="account-pill">
+            <span className="account-dot" />
+            <span className="account-address">
+              {account.slice(0, 6)}...{account.slice(-4)}
+            </span>
+            <button type="button" className="btn-icon" title="Disconnect" onClick={onDisconnect}>
+              ✕
+            </button>
+          </div>
         ) : (
           <button
             type="button"
@@ -98,10 +76,32 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
             disabled={isConnecting}
             onClick={onConnect}
           >
-            {isConnecting ? 'Connecting...' : 'Connect Wallet'}
+            {isConnecting ? 'Connecting...' : 'Connect'}
           </button>
         )}
       </div>
+
+      {account ? (
+        <div className="network-bar">
+          {getNetworkBadge()}
+          <div className="network-switchers">
+            <button
+              type="button"
+              className={`btn-sm ${chainId === NETWORKS.SEPOLIA.chainId ? 'btn-active' : ''}`}
+              onClick={onSwitchToSepolia}
+            >
+              Sepolia
+            </button>
+            <button
+              type="button"
+              className={`btn-sm ${chainId === NETWORKS.CREDITCOIN.chainId ? 'btn-active' : ''}`}
+              onClick={onSwitchToCC3}
+            >
+              Creditcoin 3
+            </button>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 };

@@ -174,10 +174,11 @@ a:focus-visible {
 }
 
 .header-container {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 1rem;
+  column-gap: 0.75rem;
+  row-gap: 0.55rem;
   margin: 12px auto 0;
   width: calc(100% - 24px);
   max-width: 1440px;
@@ -192,6 +193,24 @@ a:focus-visible {
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.header-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.network-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-self: end;
+}
+
+.header-container.is-connected {
+  grid-template-columns: 1fr auto auto;
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -252,13 +271,6 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  flex-wrap: wrap;
-}
-
-.network-info {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
   flex-wrap: wrap;
 }
 
@@ -843,9 +855,20 @@ input:disabled { opacity: 0.5; cursor: not-allowed; }
 @media (max-width: 720px) {
   .summary-grid,
   .oracle-meta-grid { grid-template-columns: 1fr; }
-  .header-container {
-    flex-wrap: wrap;
+  .header-container,
+  .header-container.is-connected {
+    grid-template-columns: 1fr auto;
     width: calc(100% - 16px);
+  }
+  .network-bar {
+    grid-column: 1 / -1;
+    width: 100%;
+    justify-self: stretch;
+  }
+  .network-bar .badge { display: none; }
+  .header-tools .btn-primary {
+    padding: 0.5rem 0.9rem;
+    font-size: 0.82rem;
   }
   .main-content { padding: 0.9rem 0.75rem 2rem; }
   .identity-copy h2 { max-width: none; }
@@ -872,8 +895,6 @@ input:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-sm { min-height: 40px; }
   .network-switchers { width: 100%; }
   .network-switchers .btn-sm { flex: 1; }
-  .wallet-actions { width: 100%; justify-content: flex-start; }
-  .account-pill { max-width: 100%; }
   .badge-id { display: none; }
   .brand .subtitle { display: none; }
   .footer { flex-direction: column; }

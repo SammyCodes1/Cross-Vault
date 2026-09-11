@@ -264,9 +264,15 @@
 }
 
 @media (max-width: 768px) {
-  .lp-nav { flex-wrap: wrap; }
+  .lp-nav {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 0.5rem 0.6rem;
+  }
+  .lp-nav-actions { justify-self: end; }
   .lp-nav .btn-outline,
-  .lp-nav .btn-primary { min-height: 44px; }
+  .lp-nav .btn-primary { min-height: 40px; padding: 0.45rem 0.85rem; }
   .lp-hero {
     min-height: min(78dvh, 640px);
     width: calc(100% - 16px);
