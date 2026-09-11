@@ -7,6 +7,7 @@ import {
   DEBT_TOKEN_ABI,
   LEGACY_DEBT_TOKEN,
   VAULT_POSITION_ABI,
+  LEDGER_VAULTS,
 } from './contracts/config';
 import { loadPositionMeta } from './lib/session';
 import { WalletConnect } from './components/WalletConnect';
@@ -258,15 +259,22 @@ export const App: React.FC = () => {
     setIsLoadingPositions(true);
     try {
       const cc3Provider = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
-      const primary = await loadPositionsFromVault(
-        CONTRACT_ADDRESSES.CROSS_VAULT,
-        cc3Provider
+      const uniqueVaults = [...new Set(LEDGER_VAULTS.map((a) => a.toLowerCase()))];
+      const batches = await Promise.all(
+        uniqueVaults.map((addr) =>
+          loadPositionsFromVault(ethers.getAddress(addr), cc3Provider).catch((err) => {
+            console.warn('Ledger vault read failed', addr, err);
+            return { positions: [] as VaultPosition[], price: null, source: null };
+          })
+        )
       );
 
       if (seq !== refreshSeq.current) return;
+      const primary = batches[0];
+      const rows = batches.flatMap((b) => b.positions);
       setCurrentPrice(primary.price && primary.price !== '0.00' ? primary.price : '2550.71');
       setPriceSource(primary.source || 'None');
-      setPositions(primary.positions);
+      setPositions(rows);
     } catch (err) {
       console.error('Error refreshing positions from Creditcoin:', err);
     } finally {
@@ -275,7 +283,8 @@ export const App: React.FC = () => {
   }, []);
 
   const upsertPosition = useCallback((row: VaultPosition) => {
-    if (row.vault.toLowerCase() !== CONTRACT_ADDRESSES.CROSS_VAULT.toLowerCase()) return;
+    const allowed = LEDGER_VAULTS.map((a) => a.toLowerCase());
+    if (!allowed.includes(row.vault.toLowerCase())) return;
     setPositions((prev) => {
       const key = `${row.vault.toLowerCase()}-${row.positionId}`;
       const rest = prev.filter((p) => `${p.vault.toLowerCase()}-${p.positionId}` !== key);

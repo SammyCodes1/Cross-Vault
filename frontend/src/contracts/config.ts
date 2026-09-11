@@ -32,6 +32,12 @@ export const CONTRACT_ADDRESSES = {
   CROSS_VAULT: '0x06a611B840f55b40c8d5c4130478f626cCcC421f',
 } as const;
 
+/** Vaults the ledger reads. Current first, then the Pyth vault that already has positions. */
+export const LEDGER_VAULTS = [
+  '0x06a611B840f55b40c8d5c4130478f626cCcC421f',
+  '0x7AC8AAfFb8763581B5a28E466359c5DE070E3BC3',
+] as const;
+
 /** Previous CC3 vault. Hosted relayer still opened positions here. */
 export const LEGACY_CROSS_VAULT = '0x4D7F912075EF21A400125821f1dA303DF7e1444A';
 export const LEGACY_DEBT_TOKEN = '0xD709d29D35D99370f75770fC48dBEa3aE6277eB4';
