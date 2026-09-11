@@ -176,6 +176,7 @@ contract CrossVaultTest is Test {
         assertEq(pos.collateralAmount, 2.5 ether);
         assertEq(pos.debtAmount, expectedDebt, "Expected exactly 5000 tvUSD debt for 2.5 mWETH at $3000 price");
         assertFalse(pos.liquidated);
+        assertEq(pos.lockId, lockId);
 
         // Verify debt token was minted directly to the decoded owner (Alice)
         assertEq(debtToken.balanceOf(alice), expectedDebt);

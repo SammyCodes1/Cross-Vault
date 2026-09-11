@@ -23,9 +23,12 @@ contract CollateralLock {
     mapping(uint256 => LockInfo) public locks;
 
     event Locked(uint256 indexed lockId, address indexed owner, uint256 amount, uint256 timestamp);
+    event Unlocked(uint256 indexed lockId, address indexed owner, uint256 amount);
 
     error InvalidToken();
     error InvalidAmount();
+    error Unauthorized();
+    error InactiveLock();
 
     constructor(address _collateralToken) {
         if (_collateralToken == address(0)) revert InvalidToken();
@@ -58,6 +61,22 @@ contract CollateralLock {
         });
 
         emit Locked(lockId, msg.sender, amount, block.timestamp);
+    }
+
+    /**
+     * @notice Returns escrowed tokens to the lock owner and marks the lock inactive.
+     * Creditcoin debt is separate: repay there before unlocking if you borrowed.
+     */
+    function unlock(uint256 lockId) external {
+        LockInfo storage info = locks[lockId];
+        if (info.owner != msg.sender) revert Unauthorized();
+        if (!info.active) revert InactiveLock();
+
+        info.active = false;
+        uint256 amount = info.amount;
+        collateralToken.safeTransfer(msg.sender, amount);
+
+        emit Unlocked(lockId, msg.sender, amount);
     }
 
     /**

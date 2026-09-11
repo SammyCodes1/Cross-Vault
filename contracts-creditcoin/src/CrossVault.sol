@@ -17,6 +17,7 @@ contract CrossVault {
         uint256 debtAmount;
         bool liquidated;
         bool repaid;
+        uint256 lockId;
     }
 
     struct LogEntry {
@@ -147,7 +148,8 @@ contract CrossVault {
             collateralAmount: collateralAmount,
             debtAmount: debtAmount,
             liquidated: false,
-            repaid: false
+            repaid: false,
+            lockId: lockId
         });
 
         emit PositionOpened(positionId, owner, lockId, collateralAmount, debtAmount);
@@ -270,7 +272,7 @@ contract CrossVault {
 
     /**
      * @notice Burns this position's tvUSD from the owner and marks it repaid.
-     * Sepolia collateral stays escrowed: Attestcoin proofs do not reverse custody.
+     * Owner can then call CollateralLock.unlock(lockId) on Sepolia to reclaim escrow.
      */
     function repay(uint256 positionId) external {
         Position storage pos = positions[positionId];

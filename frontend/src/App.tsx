@@ -8,6 +8,7 @@ import {
   LEGACY_DEBT_TOKEN,
   VAULT_POSITION_ABI,
 } from './contracts/config';
+import { loadPositionMeta } from './lib/session';
 import { WalletConnect } from './components/WalletConnect';
 import { LockBorrowPanel } from './components/LockBorrowPanel';
 import { PositionDashboard, type VaultPosition } from './components/PositionDashboard';
@@ -218,6 +219,8 @@ export const App: React.FC = () => {
             }
             const isRepaid = pos.length > 4 ? Boolean(pos[4]) : Boolean(pos.repaid ?? false);
             const isLiquidated = Boolean(pos.liquidated ?? (pos.length > 3 ? pos[3] : false));
+            const meta = loadPositionMeta(vaultAddress, i);
+            const lockId = Number(pos.lockId ?? pos[5] ?? meta.lockId ?? 0) || undefined;
             return {
               positionId: i,
               owner: pos.owner ?? pos[0],
@@ -228,6 +231,9 @@ export const App: React.FC = () => {
               repaid: isRepaid,
               isLiquidatable: Boolean(isLiq),
               vault: vaultAddress,
+              lockId,
+              sepoliaTx: meta.sepoliaTx,
+              cc3Tx: meta.cc3Tx,
             };
           } catch (posErr) {
             console.warn(`Error querying position ${i} on ${vaultAddress}:`, posErr);
@@ -397,6 +403,7 @@ export const App: React.FC = () => {
               isLoading={isLoadingPositions}
               onRefresh={handleRefreshAll}
               onSwitchToCC3={handleSwitchToCC3}
+              onSwitchToSepolia={handleSwitchToSepolia}
               getSigner={getSigner}
             />
           </div>

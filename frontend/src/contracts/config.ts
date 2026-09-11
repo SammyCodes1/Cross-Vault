@@ -48,7 +48,7 @@ export const LEGACY_VAULT_POSITION_ABI = [
   'function nextPositionId() view returns (uint256)',
   'function currentPrice() view returns (uint256)',
   'function priceSource() view returns (string)',
-  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated)',
+  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid, uint256 lockId)',
   'function isLiquidatable(uint256 positionId) view returns (bool)',
 ];
 
@@ -79,8 +79,10 @@ export const COLLATERAL_LOCK_ABI = [
   'function token() view returns (address)',
   'function nextLockId() view returns (uint256)',
   'function lock(uint256 amount) returns (uint256)',
+  'function unlock(uint256 lockId) external',
   'function getLock(uint256 lockId) view returns (tuple(address owner, uint256 amount, bool active))',
   'event Locked(uint256 indexed lockId, address indexed owner, uint256 amount, uint256 timestamp)',
+  'event Unlocked(uint256 indexed lockId, address indexed owner, uint256 amount)',
 ];
 
 export const MOCK_PRICE_FEED_ABI = [
@@ -96,8 +98,8 @@ export const CROSS_VAULT_ABI = [
   'function PYTH_CONTRACT_SEPOLIA() view returns (address)',
   'function PYTH_ETH_FEED_ID() view returns (bytes32)',
   'function nextPositionId() view returns (uint256)',
-  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid)',
-  'function getPosition(uint256 positionId) view returns (tuple(address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid))',
+  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid, uint256 lockId)',
+  'function getPosition(uint256 positionId) view returns (tuple(address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid, uint256 lockId))',
   'function isLiquidatable(uint256 positionId) view returns (bool)',
   'function liquidate(uint256 positionId) external',
   'function repay(uint256 positionId) external',

@@ -14,6 +14,7 @@ contract CollateralLockTest is Test {
     address public bob = address(0xBBBB);
 
     event Locked(uint256 indexed lockId, address indexed owner, uint256 amount, uint256 timestamp);
+    event Unlocked(uint256 indexed lockId, address indexed owner, uint256 amount);
 
     function setUp() public {
         token = new MockCollateralToken();
@@ -126,5 +127,46 @@ contract CollateralLockTest is Test {
     function test_RevertWhen_ConstructorZeroAddress() public {
         vm.expectRevert(CollateralLock.InvalidToken.selector);
         new CollateralLock(address(0));
+    }
+
+    function test_Unlock_ReturnsTokensToOwner() public {
+        token.mint(alice, 10 ether);
+        vm.startPrank(alice);
+        token.approve(address(lockContract), 4 ether);
+        uint256 lockId = lockContract.lock(4 ether);
+        assertEq(token.balanceOf(alice), 6 ether);
+
+        vm.expectEmit(true, true, false, true);
+        emit Unlocked(lockId, alice, 4 ether);
+        lockContract.unlock(lockId);
+        vm.stopPrank();
+
+        assertEq(token.balanceOf(alice), 10 ether);
+        assertEq(token.balanceOf(address(lockContract)), 0);
+        CollateralLock.LockInfo memory info = lockContract.getLock(lockId);
+        assertFalse(info.active);
+    }
+
+    function test_RevertWhen_NonOwnerUnlocks() public {
+        token.mint(alice, 10 ether);
+        vm.startPrank(alice);
+        token.approve(address(lockContract), 2 ether);
+        uint256 lockId = lockContract.lock(2 ether);
+        vm.stopPrank();
+
+        vm.prank(bob);
+        vm.expectRevert(CollateralLock.Unauthorized.selector);
+        lockContract.unlock(lockId);
+    }
+
+    function test_RevertWhen_UnlockTwice() public {
+        token.mint(alice, 10 ether);
+        vm.startPrank(alice);
+        token.approve(address(lockContract), 2 ether);
+        uint256 lockId = lockContract.lock(2 ether);
+        lockContract.unlock(lockId);
+        vm.expectRevert(CollateralLock.InactiveLock.selector);
+        lockContract.unlock(lockId);
+        vm.stopPrank();
     }
 }

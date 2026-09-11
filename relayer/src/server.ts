@@ -32,6 +32,8 @@ interface AttestJob {
   transactionHash?: string;
   positionId?: string;
   vaultAddress?: string;
+  sepoliaTxHash?: string;
+  lockId?: string;
 }
 
 export interface RelayerDependencies {
@@ -268,6 +270,8 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
         job.transactionHash = result.hash;
         job.positionId = result.positionId;
         job.vaultAddress = crossVaultAddress;
+        job.sepoliaTxHash = transactionHash;
+        job.lockId = lockId;
         job.message = `Position #${result.positionId} opened`;
         return;
       }
@@ -310,6 +314,8 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
       job.transactionHash = receipt.hash;
       job.positionId = positionId || 'unknown';
       job.vaultAddress = crossVaultAddress;
+      job.sepoliaTxHash = transactionHash;
+      job.lockId = lockId;
       job.message = `Position #${job.positionId} opened`;
       console.log(`[Relayer] Successfully opened position #${positionId} in tx ${receipt.hash}`);
     } catch (err: any) {

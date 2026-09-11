@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ethers, Contract } from 'ethers';
 import {
   NETWORKS,
@@ -17,6 +17,7 @@ import {
   sendSepoliaTx,
   mapSepoliaRpcError,
 } from '../lib/sepolia';
+import { saveAttestJob, loadAttestJob, clearAttestJob, savePositionMeta } from '../lib/session';
 
 const LOCK_STEPS: ProcessStep[] = [
   { id: 'minting', label: 'Mint mWETH', hint: 'Faucet 1.0 if the wallet is short' },
@@ -82,6 +83,21 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
   };
 
   const ensureSepolia = () => waitForSepoliaWallet(onSwitchToSepolia);
+
+  const pollAttestJob = async (jobId: string) => {
+    const deadline = Date.now() + 15 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const jobRes = await fetch(`${RELAYER_BASE_URL}/attest/jobs/${jobId}`);
+      const job = await jobRes.json().catch(() => null);
+      if (!jobRes.ok || !job) {
+        throw new Error(job?.error || `Relayer job poll failed (${jobRes.status})`);
+      }
+      if (job.message) setStatusMessage(job.message);
+      if (job.status === 'completed' || job.status === 'failed') return job;
+    }
+    throw new Error('Attestation timed out waiting for the Creditcoin prover');
+  };
 
   // Calculate estimated debt: (amount * currentPrice * 100) / 150
   const calculateEstimatedDebt = (): string => {
@@ -240,25 +256,17 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
 
       let relayerData = relayerJson || {};
       if (relayerRes.status === 202 && relayerJson?.jobId) {
-        const deadline = Date.now() + 15 * 60 * 1000;
-        while (Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          const jobRes = await fetch(`${RELAYER_BASE_URL}/attest/jobs/${relayerJson.jobId}`);
-          const job = await jobRes.json().catch(() => null);
-          if (!jobRes.ok || !job) {
-            throw new Error(job?.error || `Relayer job poll failed (${jobRes.status})`);
-          }
-          if (job.message) setStatusMessage(job.message);
-          if (job.status === 'completed') {
-            relayerData = job;
-            break;
-          }
-          if (job.status === 'failed') {
-            throw new Error(job.error || 'Attestation failed');
-          }
-        }
-        if (!relayerData.transactionHash && !relayerData.positionId) {
-          throw new Error('Attestation timed out waiting for the Creditcoin prover');
+        saveAttestJob({
+          jobId: relayerJson.jobId,
+          lockId,
+          amount,
+          sepoliaTx: sent.hash,
+          blockNumber: receipt.blockNumber,
+          startedAt: Date.now(),
+        });
+        relayerData = await pollAttestJob(relayerJson.jobId);
+        if (relayerData.status === 'failed') {
+          throw new Error(relayerData.error || 'Attestation failed');
         }
       }
 
@@ -276,6 +284,14 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         (typeof relayerData.vaultAddress === 'string' && relayerData.vaultAddress) ||
         CONTRACT_ADDRESSES.CROSS_VAULT;
       const openedId = Number(relayerData.positionId);
+      if (Number.isFinite(openedId) && openedId > 0) {
+        savePositionMeta(vaultAddr, openedId, {
+          lockId,
+          sepoliaTx: relayerData.sepoliaTxHash || sent.hash,
+          cc3Tx: relayerData.transactionHash || undefined,
+        });
+      }
+      clearAttestJob();
       if (onPositionOpened && Number.isFinite(openedId) && openedId > 0) {
         const cc3 = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
         const vault = new Contract(vaultAddr, VAULT_POSITION_ABI, cc3);
@@ -299,6 +315,9 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
                 repaid: Boolean(pos.repaid ?? (pos.length > 4 ? pos[4] : false)),
                 isLiquidatable: false,
                 vault: vaultAddr,
+                lockId,
+                sepoliaTx: relayerData.sepoliaTxHash || sent.hash,
+                cc3Tx: relayerData.transactionHash || undefined,
                 legacy: vaultAddr.toLowerCase() === LEGACY_CROSS_VAULT.toLowerCase(),
               });
               pulled = true;
@@ -322,12 +341,58 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     }
   };
 
+  useEffect(() => {
+    if (!account) return;
+    const snapshot = loadAttestJob();
+    if (!snapshot) return;
+    let cancelled = false;
+    (async () => {
+      setFlowKind('lock');
+      setLastLockId(snapshot.lockId);
+      goTo('attesting', 'Resuming attestation. Creditcoin is still proving the Sepolia block.');
+      try {
+        const job = await pollAttestJob(snapshot.jobId);
+        if (cancelled) return;
+        if (job.status === 'failed') {
+          clearAttestJob();
+          goTo('error');
+          setErrorMessage(job.error || 'Attestation failed');
+          return;
+        }
+        const vaultAddr = job.vaultAddress || CONTRACT_ADDRESSES.CROSS_VAULT;
+        const openedId = Number(job.positionId);
+        setOpenedPositionId(job.positionId || null);
+        setCc3TxHash(job.transactionHash || null);
+        if (Number.isFinite(openedId) && openedId > 0) {
+          savePositionMeta(vaultAddr, openedId, {
+            lockId: snapshot.lockId,
+            sepoliaTx: job.sepoliaTxHash || snapshot.sepoliaTx,
+            cc3Tx: job.transactionHash || undefined,
+          });
+        }
+        clearAttestJob();
+        goTo('success', `Position #${job.positionId} opened.`);
+        onRefresh();
+      } catch (err: unknown) {
+        if (cancelled) return;
+        goTo('error');
+        setErrorMessage(mapSepoliaRpcError(err).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [account]);
+
   const isBusy = currentStep !== 'idle';
   const sheetStatus =
     currentStep === 'success' ? 'success' : currentStep === 'error' ? 'error' : 'running';
   const processSteps = flowKind === 'mint' ? MINT_STEPS : LOCK_STEPS;
 
   const dismissSheet = () => {
+    if (currentStep === 'success' || currentStep === 'error') {
+      clearAttestJob();
+    }
     setCurrentStep('idle');
   };
 
