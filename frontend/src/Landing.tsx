@@ -1,5 +1,4 @@
 import React from 'react';
-import { CONTRACT_ADDRESSES } from './contracts/config';
 import './App.css';
 import './Landing.css';
 
@@ -144,12 +143,6 @@ const Landing: React.FC = () => {
       </main>
 
       <footer className="lp-foot">
-        <span>
-          CollateralLock <code>{CONTRACT_ADDRESSES.COLLATERAL_LOCK}</code>
-        </span>
-        <span>
-          CrossVault <code>{CONTRACT_ADDRESSES.CROSS_VAULT}</code>
-        </span>
         <span>
           <a href="https://github.com/SammyCodes1/Cross-Vault">GitHub</a>
         </span>
