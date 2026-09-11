@@ -6,7 +6,9 @@ import {
   MOCK_COLLATERAL_TOKEN_ABI,
   DEBT_TOKEN_ABI,
   LEGACY_DEBT_TOKEN,
+  LEGACY_CROSS_VAULT,
   VAULT_POSITION_ABI,
+  LEGACY_VAULT_POSITION_ABI,
   LEDGER_VAULTS,
 } from './contracts/config';
 import { loadPositionMeta } from './lib/session';
@@ -186,7 +188,9 @@ export const App: React.FC = () => {
     vaultAddress: string,
     provider: ethers.Provider
   ): Promise<{ positions: VaultPosition[]; price: string | null; source: string | null }> => {
-    const vault = new Contract(vaultAddress, VAULT_POSITION_ABI, provider);
+    const isLegacy4 = vaultAddress.toLowerCase() === LEGACY_CROSS_VAULT.toLowerCase();
+    const abi = isLegacy4 ? LEGACY_VAULT_POSITION_ABI : VAULT_POSITION_ABI;
+    const vault = new Contract(vaultAddress, abi, provider);
     const [rawPrice, currentSource, nextPosId] = await Promise.all([
       vault.currentPrice(),
       vault.priceSource().catch(() => 'None'),
@@ -221,7 +225,7 @@ export const App: React.FC = () => {
             const isRepaid = pos.length > 4 ? Boolean(pos[4]) : Boolean(pos.repaid ?? false);
             const isLiquidated = Boolean(pos.liquidated ?? (pos.length > 3 ? pos[3] : false));
             const meta = loadPositionMeta(vaultAddress, i);
-            const lockId = Number(pos.lockId ?? pos[5] ?? meta.lockId ?? 0) || undefined;
+            const lockId = Number((pos.length > 5 ? pos[5] : undefined) ?? meta.lockId ?? 0) || undefined;
             return {
               positionId: i,
               owner: pos.owner ?? pos[0],
