@@ -7,9 +7,15 @@ import '@fontsource/ibm-plex-mono/500.css'
 import '@fontsource/ibm-plex-mono/600.css'
 import './index.css'
 import App from './App.tsx'
+import Landing from './Landing.tsx'
+
+function Root() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  return path === '/app' ? <App /> : <Landing />
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <Root />
   </StrictMode>,
 )

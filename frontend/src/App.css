@@ -169,6 +169,8 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.7rem;
+  text-decoration: none;
+  color: inherit;
 }
 
 .vault-mark {
