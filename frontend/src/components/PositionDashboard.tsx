@@ -229,7 +229,6 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                     <tr key={`${pos.vault}-${pos.positionId}`} className={isUser ? 'user-row' : ''}>
                       <td>
                         <strong>#{pos.positionId}</strong>
-                        {pos.legacy ? <span className="tag-you">prev</span> : null}
                       </td>
                       <td>
                         <span className="mono">
