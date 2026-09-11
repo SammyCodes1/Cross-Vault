@@ -134,9 +134,10 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
 
     void runLockAttestation(job, lockId, lockIdBigInt, requestedTxHash, requestedBlock).catch(
       (err: any) => {
+        const message = err?.message || 'Lock attestation failed';
         job.status = 'failed';
-        job.error = err?.message || 'Lock attestation failed';
-        job.message = job.error;
+        job.error = message;
+        job.message = message;
       }
     );
 
