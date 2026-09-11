@@ -28,6 +28,18 @@ export const CONTRACT_ADDRESSES = {
   CROSS_VAULT: '0x7AC8AAfFb8763581B5a28E466359c5DE070E3BC3',
 } as const;
 
+/** Previous CC3 vault. Hosted relayer still opened positions here. */
+export const LEGACY_CROSS_VAULT = '0x4D7F912075EF21A400125821f1dA303DF7e1444A';
+export const LEGACY_DEBT_TOKEN = '0xD709d29D35D99370f75770fC48dBEa3aE6277eB4';
+
+export const VAULT_POSITION_ABI = [
+  'function nextPositionId() view returns (uint256)',
+  'function currentPrice() view returns (uint256)',
+  'function priceSource() view returns (string)',
+  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated)',
+  'function isLiquidatable(uint256 positionId) view returns (bool)',
+];
+
 export const RELAYER_BASE_URL =
   (import.meta.env.VITE_RELAYER_URL as string) || 'https://cross-vault.onrender.com';
 

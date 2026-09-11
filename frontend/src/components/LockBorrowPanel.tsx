@@ -258,6 +258,8 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         `Position #${relayerData.positionId} opened. Borrowed about ${calculateEstimatedDebt()} tvUSD.`
       );
       onRefresh();
+      window.setTimeout(onRefresh, 2000);
+      window.setTimeout(onRefresh, 6000);
     } catch (err: unknown) {
       console.error('Lock and borrow error:', err);
       goTo('error');

@@ -168,9 +168,13 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
     const sepoliaDeployments = getDeployedSepolia();
     const creditcoinDeployments = getDeployedCreditcoin();
     const collateralLockAddress =
-      sepoliaDeployments.collateralLock || sepoliaDeployments.CollateralLock;
+      process.env.COLLATERAL_LOCK_ADDRESS ||
+      sepoliaDeployments.collateralLock ||
+      sepoliaDeployments.CollateralLock;
     const crossVaultAddress =
-      creditcoinDeployments.crossVault || creditcoinDeployments.CrossVault;
+      process.env.CROSS_VAULT_ADDRESS ||
+      creditcoinDeployments.crossVault ||
+      creditcoinDeployments.CrossVault;
 
     if (!collateralLockAddress) {
       fail('CollateralLock address not found in deployed-sepolia.json');
@@ -328,7 +332,9 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
     const priceFeedAddress =
       sepoliaDeployments.mockPriceFeed || sepoliaDeployments.MockPriceFeed;
     const crossVaultAddress =
-      creditcoinDeployments.crossVault || creditcoinDeployments.CrossVault;
+      process.env.CROSS_VAULT_ADDRESS ||
+      creditcoinDeployments.crossVault ||
+      creditcoinDeployments.CrossVault;
 
     if (!priceFeedAddress) {
       return res.status(500).json({
@@ -450,7 +456,9 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
     // 1. Read deployed addresses
     const creditcoinDeployments = getDeployedCreditcoin();
     const crossVaultAddress =
-      creditcoinDeployments.crossVault || creditcoinDeployments.CrossVault;
+      process.env.CROSS_VAULT_ADDRESS ||
+      creditcoinDeployments.crossVault ||
+      creditcoinDeployments.CrossVault;
 
     if (!crossVaultAddress) {
       return res.status(500).json({

@@ -5,6 +5,7 @@ import {
   CONTRACT_ADDRESSES,
   CROSS_VAULT_ABI,
   DEBT_TOKEN_ABI,
+  LEGACY_DEBT_TOKEN,
 } from '../contracts/config';
 
 export interface VaultPosition {
@@ -16,6 +17,8 @@ export interface VaultPosition {
   liquidated: boolean;
   repaid: boolean;
   isLiquidatable: boolean;
+  vault: string;
+  legacy?: boolean;
 }
 
 interface PositionDashboardProps {
@@ -63,21 +66,13 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
       const signer = await getSigner();
       if (!signer) throw new Error('Could not obtain wallet signer');
 
-      const debtTokenContract = new Contract(
-        CONTRACT_ADDRESSES.DEBT_TOKEN,
-        DEBT_TOKEN_ABI,
-        signer
-      );
-
-      const crossVaultContract = new Contract(
-        CONTRACT_ADDRESSES.CROSS_VAULT,
-        CROSS_VAULT_ABI,
-        signer
-      );
+      const vaultAddr = position.vault || CONTRACT_ADDRESSES.CROSS_VAULT;
+      const debtAddr = position.legacy ? LEGACY_DEBT_TOKEN : CONTRACT_ADDRESSES.DEBT_TOKEN;
+      const debtTokenContract = new Contract(debtAddr, DEBT_TOKEN_ABI, signer);
+      const crossVaultContract = new Contract(vaultAddr, CROSS_VAULT_ABI, signer);
 
       const debtWei = ethers.parseEther(position.debtAmount);
 
-      // Check balance
       const balance: bigint = await debtTokenContract.balanceOf(account);
       if (balance < debtWei) {
         throw new Error(
@@ -85,18 +80,11 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
         );
       }
 
-      // Check allowance
-      const allowance: bigint = await debtTokenContract.allowance(
-        account,
-        CONTRACT_ADDRESSES.CROSS_VAULT
-      );
+      const allowance: bigint = await debtTokenContract.allowance(account, vaultAddr);
 
       if (allowance < debtWei) {
         setActionMessage('Approving the exact tvUSD needed for liquidation...');
-        const approveTx = await debtTokenContract.approve(
-          CONTRACT_ADDRESSES.CROSS_VAULT,
-          debtWei
-        );
+        const approveTx = await debtTokenContract.approve(vaultAddr, debtWei);
         await approveTx.wait();
       }
 
@@ -130,16 +118,17 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
       const signer = await getSigner();
       if (!signer) throw new Error('Could not obtain wallet signer');
 
+      if (position.legacy) {
+        throw new Error('Repay is only on the current vault. This position is on the previous vault.');
+      }
+
+      const vaultAddr = position.vault || CONTRACT_ADDRESSES.CROSS_VAULT;
       const debtTokenContract = new Contract(
         CONTRACT_ADDRESSES.DEBT_TOKEN,
         DEBT_TOKEN_ABI,
         signer
       );
-      const crossVaultContract = new Contract(
-        CONTRACT_ADDRESSES.CROSS_VAULT,
-        CROSS_VAULT_ABI,
-        signer
-      );
+      const crossVaultContract = new Contract(vaultAddr, CROSS_VAULT_ABI, signer);
 
       const debtWei = ethers.parseEther(position.debtAmount);
       const balance: bigint = await debtTokenContract.balanceOf(account);
@@ -149,16 +138,10 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
         );
       }
 
-      const allowance: bigint = await debtTokenContract.allowance(
-        account,
-        CONTRACT_ADDRESSES.CROSS_VAULT
-      );
+      const allowance: bigint = await debtTokenContract.allowance(account, vaultAddr);
       if (allowance < debtWei) {
         setActionMessage('Approving the exact tvUSD needed to repay...');
-        const approveTx = await debtTokenContract.approve(
-          CONTRACT_ADDRESSES.CROSS_VAULT,
-          debtWei
-        );
+        const approveTx = await debtTokenContract.approve(vaultAddr, debtWei);
         await approveTx.wait();
       }
 
@@ -239,9 +222,10 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                     pos.collateralRatio !== null && pos.collateralRatio < 120;
 
                   return (
-                    <tr key={pos.positionId} className={isUser ? 'user-row' : ''}>
+                    <tr key={`${pos.vault}-${pos.positionId}`} className={isUser ? 'user-row' : ''}>
                       <td>
                         <strong>#{pos.positionId}</strong>
+                        {pos.legacy ? <span className="tag-you">prev</span> : null}
                       </td>
                       <td>
                         <span className="mono">
@@ -297,7 +281,7 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                               {liquidatingId === pos.positionId ? 'Liquidating...' : 'Liquidate'}
                             </button>
                           )}
-                          {isUser && !pos.liquidated && !pos.repaid && (
+                          {isUser && !pos.legacy && !pos.liquidated && !pos.repaid && (
                             <button
                               type="button"
                               className="btn-ghost"

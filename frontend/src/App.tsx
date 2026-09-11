@@ -5,7 +5,8 @@ import {
   CONTRACT_ADDRESSES,
   MOCK_COLLATERAL_TOKEN_ABI,
   DEBT_TOKEN_ABI,
-  CROSS_VAULT_ABI,
+  LEGACY_CROSS_VAULT,
+  VAULT_POSITION_ABI,
 } from './contracts/config';
 import { WalletConnect } from './components/WalletConnect';
 import { LockBorrowPanel } from './components/LockBorrowPanel';
@@ -164,63 +165,83 @@ export const App: React.FC = () => {
     }
   }, [account]);
 
-  // Fetch positions and current price from Creditcoin CrossVault
+  const loadPositionsFromVault = async (
+    vaultAddress: string,
+    provider: ethers.Provider,
+    legacy: boolean
+  ): Promise<{ positions: VaultPosition[]; price: string | null; source: string | null }> => {
+    const vault = new Contract(vaultAddress, VAULT_POSITION_ABI, provider);
+    const [rawPrice, currentSource, nextPosId] = await Promise.all([
+      vault.currentPrice(),
+      vault.priceSource().catch(() => 'None'),
+      vault.nextPositionId(),
+    ]);
+    const formattedPrice = rawPrice > 0n ? ethers.formatEther(rawPrice) : '0';
+    const priceNum = parseFloat(formattedPrice);
+    const total = Number(nextPosId) - 1;
+    const rows: VaultPosition[] = [];
+
+    for (let i = 1; i <= total; i++) {
+      try {
+        const pos = await vault.positions(i);
+        let isLiq = false;
+        try {
+          isLiq = Boolean(await vault.isLiquidatable(i));
+        } catch {
+          isLiq = false;
+        }
+        const colEth = parseFloat(ethers.formatEther(pos.collateralAmount ?? pos[1]));
+        const debtUsd = parseFloat(ethers.formatEther(pos.debtAmount ?? pos[2]));
+        let ratio: number | null = null;
+        if (debtUsd > 0 && priceNum > 0) {
+          ratio = ((colEth * priceNum) / debtUsd) * 100;
+        }
+        rows.push({
+          positionId: i,
+          owner: pos.owner ?? pos[0],
+          collateralAmount: colEth.toFixed(4),
+          debtAmount: debtUsd.toFixed(2),
+          collateralRatio: ratio,
+          liquidated: Boolean(pos.liquidated ?? pos[3]),
+          repaid: Boolean(pos.repaid ?? pos[4] ?? false),
+          isLiquidatable: isLiq,
+          vault: vaultAddress,
+          legacy,
+        });
+      } catch (posErr) {
+        console.warn(`Error querying position ${i} on ${vaultAddress}:`, posErr);
+      }
+    }
+
+    return {
+      positions: rows,
+      price: rawPrice > 0n ? priceNum.toFixed(2) : null,
+      source: currentSource || null,
+    };
+  };
+
   const refreshPositions = useCallback(async () => {
     setIsLoadingPositions(true);
     try {
       const cc3Provider = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
-      const vaultContract = new Contract(
+      const primary = await loadPositionsFromVault(
         CONTRACT_ADDRESSES.CROSS_VAULT,
-        CROSS_VAULT_ABI,
-        cc3Provider
+        cc3Provider,
+        false
       );
-
-      // Read current price, price source, and nextPositionId
-      const [rawPrice, currentSource, nextPosId]: [bigint, string, bigint] = await Promise.all([
-        vaultContract.currentPrice(),
-        vaultContract.priceSource(),
-        vaultContract.nextPositionId(),
-      ]);
-
-      const formattedPrice = rawPrice > 0n ? ethers.formatEther(rawPrice) : '3000';
-      setCurrentPrice(parseFloat(formattedPrice).toFixed(2));
-      setPriceSource(currentSource || 'None');
-
-      const totalPositions = Number(nextPosId) - 1;
-      const fetchedPositions: VaultPosition[] = [];
-
-      for (let i = 1; i <= totalPositions; i++) {
+      let legacyRows: VaultPosition[] = [];
+      if (LEGACY_CROSS_VAULT.toLowerCase() !== CONTRACT_ADDRESSES.CROSS_VAULT.toLowerCase()) {
         try {
-          const [pos, isLiq]: [any, boolean] = await Promise.all([
-            vaultContract.positions(i),
-            vaultContract.isLiquidatable(i),
-          ]);
-
-          const colEth = parseFloat(ethers.formatEther(pos.collateralAmount));
-          const debtUsd = parseFloat(ethers.formatEther(pos.debtAmount));
-          const priceNum = parseFloat(formattedPrice);
-
-          let ratio: number | null = null;
-          if (debtUsd > 0 && priceNum > 0) {
-            ratio = ((colEth * priceNum) / debtUsd) * 100;
-          }
-
-          fetchedPositions.push({
-            positionId: i,
-            owner: pos.owner,
-            collateralAmount: colEth.toFixed(4),
-            debtAmount: debtUsd.toFixed(2),
-            collateralRatio: ratio,
-            liquidated: Boolean(pos.liquidated),
-            repaid: Boolean(pos.repaid),
-            isLiquidatable: isLiq,
-          });
-        } catch (posErr) {
-          console.warn(`Error querying position ${i}:`, posErr);
+          const legacy = await loadPositionsFromVault(LEGACY_CROSS_VAULT, cc3Provider, true);
+          legacyRows = legacy.positions;
+        } catch (legacyErr) {
+          console.warn('Could not read previous vault:', legacyErr);
         }
       }
 
-      setPositions(fetchedPositions);
+      setCurrentPrice(primary.price && primary.price !== '0.00' ? primary.price : '2550.71');
+      setPriceSource(primary.source || 'None');
+      setPositions([...primary.positions, ...legacyRows]);
     } catch (err) {
       console.error('Error refreshing positions from Creditcoin:', err);
     } finally {
@@ -230,7 +251,7 @@ export const App: React.FC = () => {
 
   const handleRefreshAll = useCallback(() => {
     refreshBalances();
-    refreshPositions();
+    void refreshPositions();
   }, [refreshBalances, refreshPositions]);
 
   // Handle provider events
