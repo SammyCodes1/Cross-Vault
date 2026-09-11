@@ -29,6 +29,22 @@
   color: inherit;
 }
 
+.lp-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.lp-hero-copy,
+.lp-close-copy {
+  color: #eceae4;
+}
+
+.lp-hero-copy p,
+.lp-close-copy p {
+  color: #9a968c;
+}
+
 .lp-hero {
   min-height: calc(100dvh - 88px);
   max-width: 1440px;
@@ -67,7 +83,7 @@
 
 .lp-hero-copy p {
   margin-top: 0.85rem;
-  color: var(--text-dim);
+  color: #9a968c;
   max-width: 38ch;
   font-size: 1.02rem;
 }
@@ -229,7 +245,7 @@
 
 .lp-close-copy p {
   margin: 0.7rem 0 1.2rem;
-  color: var(--text-dim);
+  color: #9a968c;
   max-width: 36ch;
 }
 
@@ -283,6 +299,10 @@
 
 @media (prefers-reduced-transparency: reduce) {
   .lp-nav { background: var(--bg-raised); backdrop-filter: none; }
+}
+
+[data-theme='light'] .lp-nav {
+  background: rgba(247, 245, 239, 0.88);
 }
 
 @media (prefers-reduced-motion: reduce) {

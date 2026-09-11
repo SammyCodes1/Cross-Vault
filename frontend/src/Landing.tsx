@@ -1,4 +1,5 @@
 import React from 'react';
+import { ThemeToggle } from './components/ThemeToggle';
 import './App.css';
 import './Landing.css';
 
@@ -20,9 +21,12 @@ const Landing: React.FC = () => {
             <span className="subtitle">Sepolia to Creditcoin</span>
           </div>
         </a>
-        <a className="btn-outline" href="/app">
-          Console
-        </a>
+        <div className="lp-nav-actions">
+          <ThemeToggle />
+          <a className="btn-outline" href="/app">
+            Console
+          </a>
+        </div>
       </header>
 
       <main id="main">

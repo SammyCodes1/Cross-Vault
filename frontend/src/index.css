@@ -4,6 +4,12 @@
   color: #eceae4;
 }
 
+[data-theme='light'] {
+  color-scheme: light;
+  background-color: #eceae4;
+  color: #1a100b;
+}
+
 html {
   scroll-behavior: smooth;
 }

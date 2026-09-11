@@ -6,6 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="CrossVault locks mWETH on Sepolia and borrows tvUSD on Creditcoin, verified through Attestcoin proofs against live Pyth ETH/USD." />
     <title>CrossVault</title>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('crossvault.theme');
+          var v = t === 'light' || t === 'dark' ? t : 'dark';
+          document.documentElement.setAttribute('data-theme', v);
+          document.documentElement.style.colorScheme = v;
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

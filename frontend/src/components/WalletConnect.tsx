@@ -1,5 +1,6 @@
 import React from 'react';
 import { NETWORKS } from '../contracts/config';
+import { ThemeToggle } from './ThemeToggle';
 
 interface WalletConnectProps {
   account: string | null;
@@ -57,6 +58,7 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
       </a>
 
       <div className="wallet-actions">
+        <ThemeToggle />
         {account ? (
           <>
             <div className="network-info">
