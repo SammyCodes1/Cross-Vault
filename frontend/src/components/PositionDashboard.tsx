@@ -10,10 +10,11 @@ import {
 export interface VaultPosition {
   positionId: number;
   owner: string;
-  collateralAmount: string; // formatted in mWETH
-  debtAmount: string; // formatted in tvUSD
-  collateralRatio: number | null; // e.g. 150.0 (%)
+  collateralAmount: string;
+  debtAmount: string;
+  collateralRatio: number | null;
   liquidated: boolean;
+  repaid: boolean;
   isLiquidatable: boolean;
 }
 
@@ -41,6 +42,7 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
   getSigner,
 }) => {
   const [liquidatingId, setLiquidatingId] = useState<number | null>(null);
+  const [repayingId, setRepayingId] = useState<number | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -90,10 +92,10 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
       );
 
       if (allowance < debtWei) {
-        setActionMessage('Approving tvUSD to CrossVault for liquidation burn...');
+        setActionMessage('Approving the exact tvUSD needed for liquidation...');
         const approveTx = await debtTokenContract.approve(
           CONTRACT_ADDRESSES.CROSS_VAULT,
-          ethers.MaxUint256
+          debtWei
         );
         await approveTx.wait();
       }
@@ -113,6 +115,66 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     }
   };
 
+  const handleRepay = async (position: VaultPosition) => {
+    if (!account) return;
+    setErrorMessage(null);
+    setActionMessage(null);
+    setRepayingId(position.positionId);
+
+    try {
+      if (!isCC3) {
+        setActionMessage('Switching to Creditcoin 3 to repay...');
+        await onSwitchToCC3();
+      }
+
+      const signer = await getSigner();
+      if (!signer) throw new Error('Could not obtain wallet signer');
+
+      const debtTokenContract = new Contract(
+        CONTRACT_ADDRESSES.DEBT_TOKEN,
+        DEBT_TOKEN_ABI,
+        signer
+      );
+      const crossVaultContract = new Contract(
+        CONTRACT_ADDRESSES.CROSS_VAULT,
+        CROSS_VAULT_ABI,
+        signer
+      );
+
+      const debtWei = ethers.parseEther(position.debtAmount);
+      const balance: bigint = await debtTokenContract.balanceOf(account);
+      if (balance < debtWei) {
+        throw new Error(
+          `Insufficient tvUSD to repay. Required: ${position.debtAmount} tvUSD, balance: ${ethers.formatEther(balance)} tvUSD`
+        );
+      }
+
+      const allowance: bigint = await debtTokenContract.allowance(
+        account,
+        CONTRACT_ADDRESSES.CROSS_VAULT
+      );
+      if (allowance < debtWei) {
+        setActionMessage('Approving the exact tvUSD needed to repay...');
+        const approveTx = await debtTokenContract.approve(
+          CONTRACT_ADDRESSES.CROSS_VAULT,
+          debtWei
+        );
+        await approveTx.wait();
+      }
+
+      setActionMessage(`Calling CrossVault.repay(${position.positionId})...`);
+      const repayTx = await crossVaultContract.repay(position.positionId);
+      await repayTx.wait();
+      setActionMessage(`Position #${position.positionId} repaid. Sepolia collateral stays escrowed.`);
+      onRefresh();
+    } catch (err: unknown) {
+      console.error('Repay failed:', err);
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRepayingId(null);
+    }
+  };
+
   const userPositions = account
     ? positions.filter((p) => p.owner.toLowerCase() === account.toLowerCase())
     : [];
@@ -121,8 +183,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     <div className="card">
       <div className="card-header">
         <div>
-          <h2>Position Dashboard</h2>
-          <span className="subtitle">Real-time state from CrossVault on Creditcoin 3</span>
+          <h2>Ledger</h2>
+          <span className="subtitle">Live CrossVault state on Creditcoin 3</span>
         </div>
         <div className="dashboard-header-right">
           <div className="price-tag-group">
@@ -152,8 +214,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
 
         {positions.length === 0 ? (
           <div className="empty-state">
-            <p>No open positions found on Creditcoin 3 CrossVault.</p>
-            <p className="text-muted">Use the "Lock & Borrow" panel to create your first cross-chain position.</p>
+            <p>No positions on Creditcoin yet.</p>
+            <p className="text-muted">Lock mWETH on Sepolia to open the first vault entry.</p>
           </div>
         ) : (
           <div className="table-responsive">
@@ -195,7 +257,7 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                       </td>
                       <td>
                         {pos.liquidated ? (
-                          <span className="text-muted">—</span>
+                          <span className="text-muted">-</span>
                         ) : pos.collateralRatio !== null ? (
                           <span
                             className={`ratio-pill ${
@@ -213,30 +275,45 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                         )}
                       </td>
                       <td>
-                        {pos.liquidated ? (
+                        {pos.repaid ? (
+                          <span className="badge badge-info">Repaid</span>
+                        ) : pos.liquidated ? (
                           <span className="badge badge-danger">Liquidated</span>
                         ) : isUndercollateralized ? (
-                          <span className="badge badge-danger">At Risk (&lt; 120%)</span>
+                          <span className="badge badge-danger">At risk</span>
                         ) : (
                           <span className="badge badge-success">Healthy</span>
                         )}
                       </td>
                       <td>
-                        {/* Prompt: Liquidate button only appears if isLiquidatable(positionId) is true */}
-                        {pos.isLiquidatable && !pos.liquidated && (
-                          <button
-                            type="button"
-                            className="btn-danger-sm"
-                            disabled={liquidatingId === pos.positionId}
-                            onClick={() => handleLiquidate(pos)}
-                          >
-                            {liquidatingId === pos.positionId ? 'Liquidating...' : 'Liquidate'}
-                          </button>
-                        )}
-                        {pos.liquidated && <span className="text-muted">Closed</span>}
-                        {!pos.isLiquidatable && !pos.liquidated && (
-                          <span className="text-muted">Safe</span>
-                        )}
+                        <div className="row-actions">
+                          {pos.isLiquidatable && !pos.liquidated && !pos.repaid && (
+                            <button
+                              type="button"
+                              className="btn-danger-sm"
+                              disabled={liquidatingId === pos.positionId}
+                              onClick={() => handleLiquidate(pos)}
+                            >
+                              {liquidatingId === pos.positionId ? 'Liquidating...' : 'Liquidate'}
+                            </button>
+                          )}
+                          {isUser && !pos.liquidated && !pos.repaid && (
+                            <button
+                              type="button"
+                              className="btn-ghost"
+                              disabled={repayingId === pos.positionId}
+                              onClick={() => handleRepay(pos)}
+                            >
+                              {repayingId === pos.positionId ? 'Repaying...' : 'Repay'}
+                            </button>
+                          )}
+                          {(pos.liquidated || pos.repaid) && (
+                            <span className="text-muted">Closed</span>
+                          )}
+                          {!pos.isLiquidatable && !pos.liquidated && !pos.repaid && !isUser && (
+                            <span className="text-muted">Safe</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -258,7 +335,7 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                 <span className="stat-label">Total Locked Collateral</span>
                 <span className="stat-val">
                   {userPositions
-                    .reduce((acc, p) => acc + (p.liquidated ? 0 : parseFloat(p.collateralAmount)), 0)
+                    .reduce((acc, p) => acc + (p.liquidated || p.repaid ? 0 : parseFloat(p.collateralAmount)), 0)
                     .toFixed(4)}{' '}
                   mWETH
                 </span>
@@ -267,7 +344,7 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                 <span className="stat-label">Total Outstanding Debt</span>
                 <span className="stat-val text-highlight">
                   {userPositions
-                    .reduce((acc, p) => acc + (p.liquidated ? 0 : parseFloat(p.debtAmount)), 0)
+                    .reduce((acc, p) => acc + (p.liquidated || p.repaid ? 0 : parseFloat(p.debtAmount)), 0)
                     .toFixed(2)}{' '}
                   tvUSD
                 </span>

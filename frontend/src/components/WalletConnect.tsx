@@ -34,8 +34,14 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
   return (
     <header className="header-container">
       <div className="brand">
-        <h1>CrossVault</h1>
-        <span className="subtitle">Cross-Chain Collateralized Lending</span>
+        <svg className="vault-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <rect x="7" y="7" width="18" height="18" rx="2" fill="none" stroke="#c8e06a" strokeWidth="1.6" />
+          <rect x="12" y="12" width="8" height="8" fill="#c8e06a" />
+        </svg>
+        <div>
+          <h1>CrossVault</h1>
+          <span className="subtitle">Sepolia to Creditcoin</span>
+        </div>
       </div>
 
       <div className="wallet-actions">

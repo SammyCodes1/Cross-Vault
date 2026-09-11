@@ -212,6 +212,7 @@ export const App: React.FC = () => {
             debtAmount: debtUsd.toFixed(2),
             collateralRatio: ratio,
             liquidated: Boolean(pos.liquidated),
+            repaid: Boolean(pos.repaid),
             isLiquidatable: isLiq,
           });
         } catch (posErr) {
@@ -290,6 +291,7 @@ export const App: React.FC = () => {
 
   return (
     <div className="app-layout">
+      <a className="skip-link" href="#main">Skip to content</a>
       <WalletConnect
         account={account}
         chainId={chainId}
@@ -300,33 +302,21 @@ export const App: React.FC = () => {
         onSwitchToSepolia={handleSwitchToSepolia}
       />
 
-      <main className="main-content">
-        {/* Info Banner */}
-        <div className="banner">
-          <div className="banner-item">
-            <span>Collateral Token:</span>
-            <strong>mWETH (Sepolia)</strong>
+      <main id="main" className="main-content">
+        <section className="identity-strip">
+          <div className="identity-copy">
+            <h2>Lock on Sepolia. Borrow on Creditcoin.</h2>
+            <p>
+              CrossVault verifies Sepolia locks through Attestcoin, then mints tvUSD
+              against that proof. {account ? `Your tvUSD balance is ${debtBalance}.` : 'Connect a wallet to lock collateral.'}
+            </p>
           </div>
-          <div className="banner-separator">•</div>
-          <div className="banner-item">
-            <span>Debt Token:</span>
-            <strong>tvUSD (Creditcoin 3)</strong>
-          </div>
-          <div className="banner-separator">•</div>
-          <div className="banner-item">
-            <span>Verification:</span>
-            <strong>USC BlockProver Precompile (0x...FD2)</strong>
-          </div>
-          {account && (
-            <>
-              <div className="banner-separator">•</div>
-              <div className="banner-item">
-                <span>Your tvUSD Balance:</span>
-                <strong className="text-highlight">{debtBalance} tvUSD</strong>
-              </div>
-            </>
-          )}
-        </div>
+          <aside className="custody-stamp">
+            Sepolia collateral stays in escrow. Attestcoin proofs do not reverse
+            custody. Repay burns tvUSD and closes the Creditcoin position. Faucet
+            mints are capped at 10 mWETH per address.
+          </aside>
+        </section>
 
         <div className="grid-container">
           {/* Left Column: Actions */}

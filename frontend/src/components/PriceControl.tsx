@@ -88,8 +88,8 @@ export const PriceControl: React.FC<PriceControlProps> = ({
       if (!signer) throw new Error('Wallet signer not available');
 
       const numericPrice = parseFloat(targetPrice);
-      if (isNaN(numericPrice) || numericPrice <= 0) {
-        throw new Error('Please enter a valid positive price');
+      if (isNaN(numericPrice) || numericPrice <= 0 || numericPrice > 1_000_000) {
+        throw new Error('Price must be above 0 and at most 1,000,000');
       }
 
       const feedContract = new Contract(
@@ -166,8 +166,8 @@ export const PriceControl: React.FC<PriceControlProps> = ({
     <div className="card">
       <div className="card-header">
         <div>
-          <h2>Oracle Price Feeds</h2>
-          <span className="subtitle">Live Pyth oracle &amp; manual demo-control</span>
+          <h2>Oracle</h2>
+          <span className="subtitle">Pyth ETH/USD plus a bounded demo feed</span>
         </div>
         {isOwner ? (
           <span className="badge badge-success">✓ Oracle Owner</span>
@@ -204,9 +204,9 @@ export const PriceControl: React.FC<PriceControlProps> = ({
         <div className="oracle-section">
           <div className="oracle-section-header">
             <div>
-              <div className="oracle-section-title">🔮 Pyth Network (Live Oracle)</div>
+              <div className="oracle-section-title">Pyth ETH/USD</div>
               <div className="oracle-section-desc">
-                Attest verified ETH/USD on-chain price from the Pyth contract on Sepolia
+                Attest the latest Sepolia PriceFeedUpdate for ETH/USD
               </div>
             </div>
             <button
@@ -215,16 +215,16 @@ export const PriceControl: React.FC<PriceControlProps> = ({
               disabled={isUpdating}
               onClick={handleAttestPythPrice}
             >
-              {isUpdating ? 'Attesting...' : 'Attest Pyth Live Price'}
+              {isUpdating ? 'Attesting...' : 'Attest Pyth'}
             </button>
           </div>
         </div>
 
         {/* Manual Mock Feed Section */}
         <div>
-          <div className="manual-section-label">⚙️ Manual MockPriceFeed (Demo Control)</div>
+          <div className="manual-section-label">Demo feed</div>
           <div className="oracle-section-desc" style={{ marginBottom: '0.6rem' }}>
-            Shift the oracle price manually to demonstrate collateral ratio changes and trigger liquidations
+            Owner-only. Price must be above 0 and at most 1,000,000 tvUSD per mWETH.
           </div>
         </div>
 
@@ -245,6 +245,7 @@ export const PriceControl: React.FC<PriceControlProps> = ({
               id="target-price"
               type="number"
               min="1"
+              max="1000000"
               step="50"
               disabled={isUpdating}
               value={newPrice}

@@ -39,6 +39,8 @@ export const MOCK_COLLATERAL_TOKEN_ABI = [
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 amount) returns (bool)',
   'function mint(address to, uint256 amount) external',
+  'function minted(address account) view returns (uint256)',
+  'function FAUCET_MAX() view returns (uint256)',
 ];
 
 export const COLLATERAL_LOCK_ABI = [
@@ -62,10 +64,12 @@ export const CROSS_VAULT_ABI = [
   'function PYTH_CONTRACT_SEPOLIA() view returns (address)',
   'function PYTH_ETH_FEED_ID() view returns (bytes32)',
   'function nextPositionId() view returns (uint256)',
-  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated)',
-  'function getPosition(uint256 positionId) view returns (tuple(address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated))',
+  'function positions(uint256 positionId) view returns (address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid)',
+  'function getPosition(uint256 positionId) view returns (tuple(address owner, uint256 collateralAmount, uint256 debtAmount, bool liquidated, bool repaid))',
   'function isLiquidatable(uint256 positionId) view returns (bool)',
   'function liquidate(uint256 positionId) external',
+  'function repay(uint256 positionId) external',
+  'function MAX_PRICE() view returns (uint256)',
   'function collateralLock() view returns (address)',
   'function priceFeed() view returns (address)',
   'function debtToken() view returns (address)',
@@ -74,6 +78,7 @@ export const CROSS_VAULT_ABI = [
   'event PriceUpdated(uint256 newPrice, uint256 timestamp)',
   'event PriceUpdatedFromPyth(uint256 newPrice, int64 rawPrice, int32 expo, uint256 timestamp)',
   'event Liquidated(uint256 indexed positionId, address indexed liquidator)',
+  'event Repaid(uint256 indexed positionId, address indexed owner)',
 ];
 
 export const DEBT_TOKEN_ABI = [

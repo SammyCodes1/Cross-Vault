@@ -145,7 +145,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         setStatusMessage(`Approving ${amount} mWETH for CollateralLock...`);
         const approveTx = await tokenContract.approve(
           CONTRACT_ADDRESSES.COLLATERAL_LOCK,
-          ethers.MaxUint256
+          parsedAmount
         );
         await approveTx.wait();
         setStatusMessage('Approval confirmed. Preparing lock...');
@@ -228,14 +228,14 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
   return (
     <div className="card">
       <div className="card-header">
-        <h2>Lock & Borrow</h2>
-        <span className="badge badge-info">150% Collateralization Ratio</span>
+        <h2>Lock</h2>
+        <span className="badge badge-info">150% ratio</span>
       </div>
 
       <div className="card-body">
         <div className="form-group">
           <div className="label-row">
-            <label htmlFor="collateral-amount">Deposit Collateral (mWETH on Sepolia)</label>
+            <label htmlFor="collateral-amount">mWETH on Sepolia</label>
             <span className="balance-text">
               Balance: <strong>{collateralBalance} mWETH</strong>
             </span>
@@ -341,7 +341,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
           disabled={!account || isBusy}
           onClick={handleLockAndBorrow}
         >
-          {isBusy ? 'Processing...' : !isSepolia ? 'Switch to Sepolia & Lock' : 'Lock Collateral & Borrow tvUSD'}
+          {isBusy ? 'Working...' : !isSepolia ? 'Switch to Sepolia' : 'Lock and borrow'}
         </button>
       </div>
     </div>
