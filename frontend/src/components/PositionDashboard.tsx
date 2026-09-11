@@ -95,6 +95,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
 
       setActionMessage(`Position #${position.positionId} liquidated successfully!`);
       onRefresh();
+      setTimeout(onRefresh, 2500);
+      setTimeout(onRefresh, 8000);
     } catch (err: unknown) {
       console.error('Liquidation failed:', err);
       setErrorMessage(err instanceof Error ? err.message : String(err));
@@ -150,6 +152,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
       await repayTx.wait();
       setActionMessage(`Position #${position.positionId} repaid. Sepolia collateral stays escrowed.`);
       onRefresh();
+      setTimeout(onRefresh, 2500);
+      setTimeout(onRefresh, 8000);
     } catch (err: unknown) {
       console.error('Repay failed:', err);
       setErrorMessage(err instanceof Error ? err.message : String(err));

@@ -75,6 +75,8 @@ export const PriceControl: React.FC<PriceControlProps> = ({
         }`
       );
       onRefresh();
+      setTimeout(onRefresh, 2500);
+      setTimeout(onRefresh, 8000);
     } catch (err: unknown) {
       console.error('Pyth attestation error:', err);
       setErrorMessage(err instanceof Error ? err.message : String(err));
