@@ -387,16 +387,6 @@ export const App: React.FC = () => {
           </div>
         </div>
       </main>
-
-      <footer className="footer">
-        <div className="footer-links">
-          <span>CollateralLock (Sepolia): <code>{CONTRACT_ADDRESSES.COLLATERAL_LOCK}</code></span>
-          <span>CrossVault (Creditcoin 3): <code>{CONTRACT_ADDRESSES.CROSS_VAULT}</code></span>
-        </div>
-        <div className="footer-status">
-          <span className="pulse-dot" /> Relayer live · cross-vault.onrender.com
-        </div>
-      </footer>
     </div>
   );
 };
