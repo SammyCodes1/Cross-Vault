@@ -6,6 +6,7 @@ import {
   MOCK_COLLATERAL_TOKEN_ABI,
   DEBT_TOKEN_ABI,
   LEGACY_CROSS_VAULT,
+  LEGACY_DEBT_TOKEN,
   VAULT_POSITION_ABI,
 } from './contracts/config';
 import { WalletConnect } from './components/WalletConnect';
@@ -167,7 +168,14 @@ export const App: React.FC = () => {
         cc3Provider
       );
       const debtBal: bigint = await debtContract.balanceOf(account);
-      setDebtBalance(parseFloat(ethers.formatEther(debtBal)).toFixed(2));
+      let legacyBal = 0n;
+      try {
+        const legacyDebt = new Contract(LEGACY_DEBT_TOKEN, DEBT_TOKEN_ABI, cc3Provider);
+        legacyBal = await legacyDebt.balanceOf(account);
+      } catch {
+        legacyBal = 0n;
+      }
+      setDebtBalance(parseFloat(ethers.formatEther(debtBal + legacyBal)).toFixed(2));
     } catch (err) {
       console.warn('Could not read tvUSD balance:', err);
     }
@@ -342,20 +350,18 @@ export const App: React.FC = () => {
       />
 
       <main id="main" className="main-content">
-        <section className="identity-strip">
-          <div className="identity-copy">
-            <h2>Lock on Sepolia. Borrow on Creditcoin.</h2>
-            <p>
-              CrossVault verifies Sepolia locks through Attestcoin, then mints tvUSD
-              against that proof. {account ? `Your tvUSD balance is ${debtBalance}.` : 'Connect a wallet to lock collateral.'}
-            </p>
-          </div>
-          <aside className="custody-stamp">
-            Sepolia collateral stays in escrow. Attestcoin proofs do not reverse
-            custody. Repay burns tvUSD and closes the Creditcoin position. Faucet
-            mints are capped at 10 mWETH per address.
-          </aside>
-        </section>
+        {account ? (
+          <section className="balance-bar" aria-label="Balances">
+            <div className="balance-chip">
+              <span>mWETH</span>
+              <strong>{collateralBalance}</strong>
+            </div>
+            <div className="balance-chip">
+              <span>tvUSD</span>
+              <strong>{debtBalance}</strong>
+            </div>
+          </section>
+        ) : null}
 
         <div className="grid-container">
           {/* Left Column: Actions */}
