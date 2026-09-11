@@ -23,12 +23,24 @@ export const WalletConnect: React.FC<WalletConnectProps> = ({
   const getNetworkBadge = () => {
     if (!chainId) return null;
     if (chainId === NETWORKS.SEPOLIA.chainId) {
-      return <span className="badge badge-sepolia">Sepolia ({chainId})</span>;
+      return (
+        <span className="badge badge-sepolia">
+          Sepolia <span className="badge-id">({chainId})</span>
+        </span>
+      );
     }
     if (chainId === NETWORKS.CREDITCOIN.chainId) {
-      return <span className="badge badge-cc3">Creditcoin Testnet ({chainId})</span>;
+      return (
+        <span className="badge badge-cc3">
+          Creditcoin <span className="badge-id">({chainId})</span>
+        </span>
+      );
     }
-    return <span className="badge badge-warning">Unsupported Chain ({chainId})</span>;
+    return (
+      <span className="badge badge-warning">
+        Unsupported <span className="badge-id">({chainId})</span>
+      </span>
+    );
   };
 
   return (
