@@ -110,14 +110,17 @@ a:focus-visible {
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .main-content {
   flex: 1;
   padding: 1.25rem 1.25rem 2.5rem;
-  max-width: 1440px;
+  max-width: min(1440px, 100%);
   margin: 0 auto;
   width: 100%;
+  min-width: 0;
 }
 
 .balance-bar {
@@ -193,6 +196,16 @@ a:focus-visible {
   grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
   gap: 1.15rem;
   align-items: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.col-left,
+.col-right,
+.card,
+.card-body {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (max-width: 1100px) {
@@ -214,7 +227,8 @@ a:focus-visible {
   row-gap: 0.55rem;
   margin: 12px auto 0;
   width: calc(100% - 24px);
-  max-width: 1440px;
+  max-width: min(1440px, 100%);
+  min-width: 0;
   min-height: 64px;
   padding: 0.55rem 0.7rem 0.55rem 1rem;
   position: sticky;
@@ -791,9 +805,11 @@ input:disabled { opacity: 0.5; cursor: not-allowed; }
 .price-source-none { color: var(--text-faint); }
 
 .table-responsive {
+  display: block;
+  width: 100%;
+  max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  max-width: 100%;
 }
 
 .positions-table {

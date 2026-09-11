@@ -1,5 +1,7 @@
 .lp {
   min-height: 100dvh;
+  max-width: 100%;
+  overflow-x: hidden;
   color: var(--text);
 }
 
@@ -195,6 +197,7 @@
 .lp-figure img {
   display: block;
   width: 100%;
+  max-width: 100%;
   height: 100%;
   object-fit: cover;
   min-height: 320px;
