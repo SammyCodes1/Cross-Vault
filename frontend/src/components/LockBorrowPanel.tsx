@@ -75,6 +75,23 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     if (message) setStatusMessage(message);
   };
 
+  const sepoliaReader = () => new ethers.JsonRpcProvider(NETWORKS.SEPOLIA.rpcUrls[0]);
+
+  const waitForSepoliaWallet = async () => {
+    if (!window.ethereum) {
+      throw new Error('No wallet found. Open this page in MetaMask or another EVM wallet.');
+    }
+    await onSwitchToSepolia();
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const network = await provider.getNetwork();
+      if (Number(network.chainId) === NETWORKS.SEPOLIA.chainId) return;
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+    throw new Error('Wallet is not on Sepolia. Switch the network to Sepolia and try again.');
+  };
+
   // Calculate estimated debt: (amount * currentPrice * 100) / 150
   const calculateEstimatedDebt = (): string => {
     try {
@@ -94,13 +111,12 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     if (!account) return;
     setErrorMessage(null);
     try {
-      if (!isSepolia) {
-        await onSwitchToSepolia();
-      }
+      setFlowKind('mint');
+      goTo('minting', 'Switching to Sepolia...');
+      await waitForSepoliaWallet();
       const signer = await getSigner();
       if (!signer) throw new Error('No signer available');
 
-      setFlowKind('mint');
       goTo('minting', 'Minting 1.0 mWETH for testnet...');
 
       const tokenContract = new Contract(
@@ -132,10 +148,8 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     goTo('approving', 'Preparing lock and borrow...');
 
     try {
-      if (!isSepolia) {
-        goTo('approving', 'Switching to Sepolia...');
-        await onSwitchToSepolia();
-      }
+      goTo('approving', 'Switching to Sepolia...');
+      await waitForSepoliaWallet();
 
       const signer = await getSigner();
       if (!signer) throw new Error('Could not obtain wallet signer');
@@ -145,31 +159,36 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         throw new Error('Please enter a valid amount greater than 0');
       }
 
-      const tokenContract = new Contract(
+      const readToken = new Contract(
+        CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
+        MOCK_COLLATERAL_TOKEN_ABI,
+        sepoliaReader()
+      );
+      const writeToken = new Contract(
         CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
         MOCK_COLLATERAL_TOKEN_ABI,
         signer
       );
 
-      // 1. Check user balance; if 0, mint 1.0 mWETH as testnet convenience
-      const balance: bigint = await tokenContract.balanceOf(account);
+      const balance: bigint = await readToken.balanceOf(account);
       if (balance === 0n || balance < parsedAmount) {
         goTo('minting', `Balance low (${ethers.formatEther(balance)} mWETH). Minting 1.0 mWETH...`);
-        const mintTx = await tokenContract.mint(account, ethers.parseEther('1.0'));
+        await waitForSepoliaWallet();
+        const mintTx = await writeToken.mint(account, ethers.parseEther('1.0'));
         await mintTx.wait();
         setStatusMessage('Minted 1.0 mWETH. Continuing lock process...');
       }
 
-      // 2. Check and approve CollateralLock contract
       goTo('approving', 'Checking allowance for CollateralLock...');
-      const currentAllowance: bigint = await tokenContract.allowance(
+      const currentAllowance: bigint = await readToken.allowance(
         account,
         CONTRACT_ADDRESSES.COLLATERAL_LOCK
       );
 
       if (currentAllowance < parsedAmount) {
         setStatusMessage(`Approving ${amount} mWETH for CollateralLock...`);
-        const approveTx = await tokenContract.approve(
+        await waitForSepoliaWallet();
+        const approveTx = await writeToken.approve(
           CONTRACT_ADDRESSES.COLLATERAL_LOCK,
           parsedAmount
         );
@@ -177,8 +196,8 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         setStatusMessage('Approval confirmed. Preparing lock...');
       }
 
-      // 3. Call CollateralLock.lock(amount)
       goTo('locking', `Locking ${amount} mWETH into escrow on Sepolia...`);
+      await waitForSepoliaWallet();
       const lockContract = new Contract(
         CONTRACT_ADDRESSES.COLLATERAL_LOCK,
         COLLATERAL_LOCK_ABI,
