@@ -11,6 +11,12 @@ import {
 } from '../contracts/config';
 import { ProcessGlass, type ProcessStep } from './ProcessGlass';
 import type { VaultPosition } from './PositionDashboard';
+import {
+  getSepoliaProvider,
+  waitForSepoliaWallet,
+  sendSepoliaTx,
+  mapSepoliaRpcError,
+} from '../lib/sepolia';
 
 const LOCK_STEPS: ProcessStep[] = [
   { id: 'minting', label: 'Mint mWETH', hint: 'Faucet 1.0 if the wallet is short' },
@@ -75,22 +81,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     if (message) setStatusMessage(message);
   };
 
-  const sepoliaReader = () => new ethers.JsonRpcProvider(NETWORKS.SEPOLIA.rpcUrls[0]);
-
-  const waitForSepoliaWallet = async () => {
-    if (!window.ethereum) {
-      throw new Error('No wallet found. Open this page in MetaMask or another EVM wallet.');
-    }
-    await onSwitchToSepolia();
-    const deadline = Date.now() + 20000;
-    while (Date.now() < deadline) {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const network = await provider.getNetwork();
-      if (Number(network.chainId) === NETWORKS.SEPOLIA.chainId) return;
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    }
-    throw new Error('Wallet is not on Sepolia. Switch the network to Sepolia and try again.');
-  };
+  const ensureSepolia = () => waitForSepoliaWallet(onSwitchToSepolia);
 
   // Calculate estimated debt: (amount * currentPrice * 100) / 150
   const calculateEstimatedDebt = (): string => {
@@ -113,28 +104,28 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     try {
       setFlowKind('mint');
       goTo('minting', 'Switching to Sepolia...');
-      await waitForSepoliaWallet();
+      await ensureSepolia();
       const signer = await getSigner();
       if (!signer) throw new Error('No signer available');
 
       goTo('minting', 'Minting 1.0 mWETH for testnet...');
-
-      const tokenContract = new Contract(
+      const token = new Contract(
         CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
-        MOCK_COLLATERAL_TOKEN_ABI,
-        signer
+        MOCK_COLLATERAL_TOKEN_ABI
       );
-
-      const tx = await tokenContract.mint(account, ethers.parseEther('1.0'));
+      const data = token.interface.encodeFunctionData('mint', [account, ethers.parseEther('1.0')]);
       setStatusMessage('Waiting for mint confirmation on Sepolia...');
-      await tx.wait();
+      await sendSepoliaTx(signer, {
+        to: CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
+        data,
+      });
 
       goTo('success', '1.0 mWETH minted to this wallet.');
       onRefresh();
     } catch (err: unknown) {
       console.error('Mint error:', err);
       goTo('error');
-      setErrorMessage(err instanceof Error ? err.message : String(err));
+      setErrorMessage(mapSepoliaRpcError(err).message);
     }
   };
 
@@ -149,7 +140,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
 
     try {
       goTo('approving', 'Switching to Sepolia...');
-      await waitForSepoliaWallet();
+      await ensureSepolia();
 
       const signer = await getSigner();
       if (!signer) throw new Error('Could not obtain wallet signer');
@@ -159,23 +150,23 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         throw new Error('Please enter a valid amount greater than 0');
       }
 
+      const sepolia = await getSepoliaProvider();
       const readToken = new Contract(
         CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
         MOCK_COLLATERAL_TOKEN_ABI,
-        sepoliaReader()
+        sepolia
       );
-      const writeToken = new Contract(
-        CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
-        MOCK_COLLATERAL_TOKEN_ABI,
-        signer
-      );
+      const tokenIface = readToken.interface;
+      const lockIface = new ethers.Interface(COLLATERAL_LOCK_ABI);
 
       const balance: bigint = await readToken.balanceOf(account);
       if (balance === 0n || balance < parsedAmount) {
         goTo('minting', `Balance low (${ethers.formatEther(balance)} mWETH). Minting 1.0 mWETH...`);
-        await waitForSepoliaWallet();
-        const mintTx = await writeToken.mint(account, ethers.parseEther('1.0'));
-        await mintTx.wait();
+        await ensureSepolia();
+        await sendSepoliaTx(signer, {
+          to: CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
+          data: tokenIface.encodeFunctionData('mint', [account, ethers.parseEther('1.0')]),
+        });
         setStatusMessage('Minted 1.0 mWETH. Continuing lock process...');
       }
 
@@ -187,32 +178,31 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
 
       if (currentAllowance < parsedAmount) {
         setStatusMessage(`Approving ${amount} mWETH for CollateralLock...`);
-        await waitForSepoliaWallet();
-        const approveTx = await writeToken.approve(
-          CONTRACT_ADDRESSES.COLLATERAL_LOCK,
-          parsedAmount
-        );
-        await approveTx.wait();
+        await ensureSepolia();
+        await sendSepoliaTx(signer, {
+          to: CONTRACT_ADDRESSES.MOCK_COLLATERAL_TOKEN,
+          data: tokenIface.encodeFunctionData('approve', [
+            CONTRACT_ADDRESSES.COLLATERAL_LOCK,
+            parsedAmount,
+          ]),
+        });
         setStatusMessage('Approval confirmed. Preparing lock...');
       }
 
       goTo('locking', `Locking ${amount} mWETH into escrow on Sepolia...`);
-      await waitForSepoliaWallet();
-      const lockContract = new Contract(
-        CONTRACT_ADDRESSES.COLLATERAL_LOCK,
-        COLLATERAL_LOCK_ABI,
-        signer
-      );
-
-      const lockTx = await lockContract.lock(parsedAmount);
-      setStatusMessage(`Transaction submitted: ${lockTx.hash.slice(0, 10)}... Awaiting confirmation...`);
-      const receipt = await lockTx.wait();
+      await ensureSepolia();
+      const sent = await sendSepoliaTx(signer, {
+        to: CONTRACT_ADDRESSES.COLLATERAL_LOCK,
+        data: lockIface.encodeFunctionData('lock', [parsedAmount]),
+      });
+      setStatusMessage(`Transaction submitted: ${sent.hash.slice(0, 10)}... Awaiting confirmation...`);
+      const receipt = sent.receipt;
 
       // Extract lockId from Locked event
       let lockId: number | null = null;
       for (const log of receipt.logs) {
         try {
-          const parsed = lockContract.interface.parseLog(log);
+          const parsed = lockIface.parseLog(log);
           if (parsed && parsed.name === 'Locked') {
             lockId = Number(parsed.args.lockId);
             break;
@@ -238,7 +228,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transactionHash: lockTx.hash,
+          transactionHash: sent.hash,
           blockNumber: receipt.blockNumber,
         }),
       });
@@ -328,7 +318,7 @@ export const LockBorrowPanel: React.FC<LockBorrowPanelProps> = ({
     } catch (err: unknown) {
       console.error('Lock and borrow error:', err);
       goTo('error');
-      setErrorMessage(err instanceof Error ? err.message : String(err));
+      setErrorMessage(mapSepoliaRpcError(err).message);
     }
   };
 

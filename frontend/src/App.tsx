@@ -78,6 +78,13 @@ export const App: React.FC = () => {
       alert('MetaMask or Web3 wallet not detected.');
       return;
     }
+    const sepoliaChain = {
+      chainId: NETWORKS.SEPOLIA.chainIdHex,
+      chainName: NETWORKS.SEPOLIA.chainName,
+      nativeCurrency: NETWORKS.SEPOLIA.nativeCurrency,
+      rpcUrls: [...NETWORKS.SEPOLIA.rpcUrls],
+      blockExplorerUrls: NETWORKS.SEPOLIA.blockExplorerUrls,
+    };
     try {
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
@@ -87,20 +94,20 @@ export const App: React.FC = () => {
       if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
         await window.ethereum.request({
           method: 'wallet_addEthereumChain',
-          params: [
-            {
-              chainId: NETWORKS.SEPOLIA.chainIdHex,
-              chainName: NETWORKS.SEPOLIA.chainName,
-              nativeCurrency: NETWORKS.SEPOLIA.nativeCurrency,
-              rpcUrls: NETWORKS.SEPOLIA.rpcUrls,
-              blockExplorerUrls: NETWORKS.SEPOLIA.blockExplorerUrls,
-            },
-          ],
+          params: [sepoliaChain],
         });
-      } else {
-        console.error('Failed to switch to Sepolia:', switchError);
-        throw switchError;
+        return;
       }
+      console.error('Failed to switch to Sepolia:', switchError);
+      throw switchError;
+    }
+    try {
+      await window.ethereum.request({
+        method: 'wallet_addEthereumChain',
+        params: [sepoliaChain],
+      });
+    } catch {
+      /* chain already present; RPC update is wallet-dependent */
     }
   }, []);
 

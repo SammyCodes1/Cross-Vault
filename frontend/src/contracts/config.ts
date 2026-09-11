@@ -4,7 +4,11 @@ export const NETWORKS = {
     chainIdHex: '0xaa36a7',
     chainName: 'Sepolia',
     nativeCurrency: { name: 'Sepolia Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: ['https://ethereum-sepolia-rpc.publicnode.com'],
+    rpcUrls: [
+      'https://ethereum-sepolia-rpc.publicnode.com',
+      'https://rpc.sepolia.org',
+      'https://1rpc.io/sepolia',
+    ],
     blockExplorerUrls: ['https://sepolia.etherscan.io'],
   },
   CREDITCOIN: {
