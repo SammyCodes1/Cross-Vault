@@ -9,6 +9,13 @@ import {
   COLLATERAL_LOCK_ABI,
 } from '../contracts/config';
 import { waitForSepoliaWallet, sendSepoliaTx, mapSepoliaRpcError } from '../lib/sepolia';
+import { ProcessGlass, type ProcessStep } from './ProcessGlass';
+
+const REPAY_STEPS: ProcessStep[] = [
+  { id: 'switching', label: 'Switch network', hint: 'Creditcoin 3 for the repay tx' },
+  { id: 'approving', label: 'Approve tvUSD', hint: 'Exact debt amount to the vault' },
+  { id: 'repay', label: 'Repay debt', hint: 'Burn tvUSD and close the position' },
+];
 
 export interface VaultPosition {
   positionId: number;
@@ -54,6 +61,9 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
   const [liquidatingId, setLiquidatingId] = useState<number | null>(null);
   const [repayingId, setRepayingId] = useState<number | null>(null);
   const [unlockingId, setUnlockingId] = useState<number | null>(null);
+  const [repayOpen, setRepayOpen] = useState(false);
+  const [repayStep, setRepayStep] = useState('switching');
+  const [repayStatus, setRepayStatus] = useState<'running' | 'success' | 'error'>('running');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -118,21 +128,26 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     setErrorMessage(null);
     setActionMessage(null);
     setRepayingId(position.positionId);
+    setRepayOpen(true);
+    setRepayStatus('running');
+    setRepayStep('switching');
 
     try {
+      if (position.legacy) {
+        throw new Error('Repay is only on the current vault. This position is on the previous vault.');
+      }
+
+      setActionMessage('Switching to Creditcoin 3...');
       if (!isCC3) {
-        setActionMessage('Switching to Creditcoin 3 to repay...');
         await onSwitchToCC3();
       }
 
       const signer = await getSigner();
       if (!signer) throw new Error('Could not obtain wallet signer');
 
-      if (position.legacy) {
-        throw new Error('Repay is only on the current vault. This position is on the previous vault.');
-      }
-
       const vaultAddr = position.vault || CONTRACT_ADDRESSES.CROSS_VAULT;
+      const cc3 = new ethers.JsonRpcProvider(NETWORKS.CREDITCOIN.rpcUrls[0]);
+      const readDebt = new Contract(CONTRACT_ADDRESSES.DEBT_TOKEN, DEBT_TOKEN_ABI, cc3);
       const debtTokenContract = new Contract(
         CONTRACT_ADDRESSES.DEBT_TOKEN,
         DEBT_TOKEN_ABI,
@@ -141,29 +156,33 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
       const crossVaultContract = new Contract(vaultAddr, CROSS_VAULT_ABI, signer);
 
       const debtWei = ethers.parseEther(position.debtAmount);
-      const balance: bigint = await debtTokenContract.balanceOf(account);
+      const balance: bigint = await readDebt.balanceOf(account);
       if (balance < debtWei) {
         throw new Error(
           `Insufficient tvUSD to repay. Required: ${position.debtAmount} tvUSD, balance: ${ethers.formatEther(balance)} tvUSD`
         );
       }
 
-      const allowance: bigint = await debtTokenContract.allowance(account, vaultAddr);
+      setRepayStep('approving');
+      const allowance: bigint = await readDebt.allowance(account, vaultAddr);
       if (allowance < debtWei) {
         setActionMessage('Approving the exact tvUSD needed to repay...');
         const approveTx = await debtTokenContract.approve(vaultAddr, debtWei);
         await approveTx.wait();
       }
 
+      setRepayStep('repay');
       setActionMessage(`Calling CrossVault.repay(${position.positionId})...`);
       const repayTx = await crossVaultContract.repay(position.positionId);
       await repayTx.wait();
+      setRepayStatus('success');
       setActionMessage(`Position #${position.positionId} repaid. Unlock on Sepolia to reclaim mWETH.`);
       onRefresh();
       setTimeout(onRefresh, 2500);
       setTimeout(onRefresh, 8000);
     } catch (err: unknown) {
       console.error('Repay failed:', err);
+      setRepayStatus('error');
       setErrorMessage(err instanceof Error ? err.message : String(err));
     } finally {
       setRepayingId(null);
@@ -413,6 +432,23 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
           </div>
         )}
       </div>
+
+      <ProcessGlass
+        open={repayOpen}
+        title="Repay"
+        steps={REPAY_STEPS}
+        currentId={repayStep}
+        status={repayStatus}
+        message={actionMessage || 'Closing the Creditcoin position.'}
+        error={errorMessage}
+        onDismiss={() => {
+          setRepayOpen(false);
+          if (repayStatus !== 'running') {
+            setActionMessage(null);
+            setErrorMessage(null);
+          }
+        }}
+      />
     </div>
   );
 };

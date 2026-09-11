@@ -23,6 +23,8 @@ const SUBS: Record<string, string[]> = {
   locking: ['escrow transfer', 'reading lock id', 'Sepolia confirmed'],
   attesting: ['watching the block', 'USC prover', 'continuity proof'],
   verifying: ['openPosition', 'mint tvUSD', 'position opened'],
+  switching: ['Creditcoin 3', 'wallet confirm', 'network ready'],
+  repay: ['burn tvUSD', 'mark repaid', 'position closed'],
 };
 
 export const ProcessGlass: React.FC<ProcessGlassProps> = ({
@@ -64,7 +66,7 @@ export const ProcessGlass: React.FC<ProcessGlassProps> = ({
       ? 100
       : ((currentIndex + (sub + 1) / subs.length) / Math.max(steps.length, 1)) * 100;
   const stage =
-    status === 'success' || currentId === 'verifying'
+    status === 'success' || currentId === 'verifying' || currentId === 'repay'
       ? 'publish'
       : currentId === 'attesting'
         ? 'synth'
