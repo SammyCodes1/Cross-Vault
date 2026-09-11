@@ -343,6 +343,31 @@ contract CrossVaultTest is Test {
         crossVault.liquidate(positionId);
     }
 
+    function test_Repay_ClosesPositionAndBurnsDebt() public {
+        crossVault.updatePrice(_createPriceUpdateProof(3000 ether, 100));
+        uint256 positionId = crossVault.openPosition(1, _createLockProof(1, alice, 2 ether, 101));
+
+        vm.startPrank(alice);
+        debtToken.approve(address(crossVault), 4000 ether);
+        crossVault.repay(positionId);
+        vm.stopPrank();
+
+        CrossVault.Position memory pos = crossVault.getPosition(positionId);
+        assertTrue(pos.repaid);
+        assertFalse(pos.liquidated);
+        assertEq(debtToken.balanceOf(alice), 0);
+        assertFalse(crossVault.isLiquidatable(positionId));
+    }
+
+    function test_RevertWhen_NonOwnerRepays() public {
+        crossVault.updatePrice(_createPriceUpdateProof(3000 ether, 100));
+        uint256 positionId = crossVault.openPosition(1, _createLockProof(1, alice, 2 ether, 101));
+
+        vm.prank(bob);
+        vm.expectRevert(CrossVault.InvalidOwner.selector);
+        crossVault.repay(positionId);
+    }
+
     /**
      * @notice Test DebtToken access controls.
      */
@@ -356,8 +381,126 @@ contract CrossVaultTest is Test {
         debtToken.burn(alice, 100 ether);
 
         vm.prank(alice);
-        vm.expectRevert(DebtToken.VaultAlreadySet.selector);
+        vm.expectRevert(DebtToken.Unauthorized.selector);
         debtToken.setVault(alice);
+    }
+
+    function test_DebtToken_SetVaultOnlyOnceByDeployer() public {
+        DebtToken token = new DebtToken(address(0));
+
+        vm.prank(alice);
+        vm.expectRevert(DebtToken.Unauthorized.selector);
+        token.setVault(alice);
+
+        token.setVault(address(crossVault));
+        assertEq(token.vault(), address(crossVault));
+
+        vm.expectRevert(DebtToken.VaultAlreadySet.selector);
+        token.setVault(address(1));
+    }
+
+    function test_RevertWhen_ConstructorZeroAddress() public {
+        vm.expectRevert(CrossVault.ZeroAddress.selector);
+        new CrossVault(address(0), priceFeed, address(debtToken), sepoliaChainKey);
+
+        vm.expectRevert(CrossVault.ZeroAddress.selector);
+        new CrossVault(collateralLock, address(0), address(debtToken), sepoliaChainKey);
+
+        vm.expectRevert(CrossVault.ZeroAddress.selector);
+        new CrossVault(collateralLock, priceFeed, address(0), sepoliaChainKey);
+    }
+
+    function test_RevertWhen_SimpleTupleLockProofRejected() public {
+        crossVault.updatePrice(_createPriceUpdateProof(3000 ether, 100));
+
+        TxProof memory junk = _createBareTupleLockProof(1, alice, 1 ether, 101);
+        vm.expectRevert(CrossVault.InvalidEventData.selector);
+        crossVault.openPosition(1, junk);
+        assertFalse(crossVault.usedLockIds(1));
+    }
+
+    function test_RevertWhen_FailedDecodeDoesNotConsumeLockId() public {
+        crossVault.updatePrice(_createPriceUpdateProof(3000 ether, 100));
+
+        TxProof memory junk = _createBareTupleLockProof(1, alice, 1 ether, 101);
+        vm.expectRevert(CrossVault.InvalidEventData.selector);
+        crossVault.openPosition(1, junk);
+
+        uint256 positionId = crossVault.openPosition(1, _createLockProof(1, alice, 1 ether, 102));
+        assertEq(positionId, 1);
+        assertEq(debtToken.balanceOf(alice), (1 ether * 3000 ether * 100) / (1e18 * 150));
+    }
+
+    function test_RevertWhen_LockProofWrongEmitter() public {
+        crossVault.updatePrice(_createPriceUpdateProof(3000 ether, 100));
+
+        bytes memory encodedTx = abi.encode(address(0xDEAD), uint256(1), alice, uint256(1 ether));
+        TxProof memory proof = TxProof({
+            height: 101,
+            encodedTx: encodedTx,
+            merkleProof: MerkleProof({root: keccak256("wrong-emitter"), siblings: new MerkleProofEntry[](0)}),
+            continuityProof: ContinuityProof({lowerEndpointDigest: bytes32(0), roots: new bytes32[](0)})
+        });
+
+        vm.expectRevert(CrossVault.WrongContract.selector);
+        crossVault.openPosition(1, proof);
+        assertFalse(crossVault.usedLockIds(1));
+    }
+
+    function test_RevertWhen_SimpleTuplePriceProofRejected() public {
+        bytes memory encodedTx = abi.encode(uint256(999 ether), block.timestamp);
+        TxProof memory proof = TxProof({
+            height: 100,
+            encodedTx: encodedTx,
+            merkleProof: MerkleProof({root: keccak256("bare-price"), siblings: new MerkleProofEntry[](0)}),
+            continuityProof: ContinuityProof({lowerEndpointDigest: bytes32(0), roots: new bytes32[](0)})
+        });
+
+        vm.expectRevert(CrossVault.InvalidEventData.selector);
+        crossVault.updatePrice(proof);
+        assertEq(crossVault.currentPrice(), 0);
+    }
+
+    function test_RevertWhen_PriceProofWrongEmitter() public {
+        TxProof memory proof = TxProof({
+            height: 100,
+            encodedTx: abi.encode(address(0xDEAD), uint256(999 ether), block.timestamp),
+            merkleProof: MerkleProof({root: keccak256("wrong-price-emitter"), siblings: new MerkleProofEntry[](0)}),
+            continuityProof: ContinuityProof({lowerEndpointDigest: bytes32(0), roots: new bytes32[](0)})
+        });
+
+        vm.expectRevert(CrossVault.WrongContract.selector);
+        crossVault.updatePrice(proof);
+    }
+
+    function test_RevertWhen_ZeroPriceRejected() public {
+        TxProof memory proof = _createPriceUpdateProof(0, 100);
+        vm.expectRevert(CrossVault.InvalidPrice.selector);
+        crossVault.updatePrice(proof);
+        assertEq(crossVault.currentPrice(), 0);
+    }
+
+    function test_RevertWhen_PriceAboveMaxRejected() public {
+        TxProof memory proof = _createPriceUpdateProof(1_000_000 ether + 1, 100);
+        vm.expectRevert(CrossVault.InvalidPrice.selector);
+        crossVault.updatePrice(proof);
+    }
+
+    function _createBareTupleLockProof(
+        uint256 lockId,
+        address owner,
+        uint256 amount,
+        uint64 height
+    ) internal pure returns (TxProof memory) {
+        return TxProof({
+            height: height,
+            encodedTx: abi.encode(lockId, owner, amount),
+            merkleProof: MerkleProof({
+                root: keccak256(abi.encodePacked("bare-lock", lockId)),
+                siblings: new MerkleProofEntry[](0)
+            }),
+            continuityProof: ContinuityProof({lowerEndpointDigest: bytes32(0), roots: new bytes32[](0)})
+        });
     }
 
     // =========================================================================

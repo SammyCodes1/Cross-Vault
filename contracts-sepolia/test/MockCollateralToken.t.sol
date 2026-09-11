@@ -23,28 +23,35 @@ contract MockCollateralTokenTest is Test {
     }
 
     function test_Mint_HappyPath() public {
-        uint256 mintAmount = 100 ether;
+        uint256 mintAmount = 10 ether;
         token.mint(alice, mintAmount);
 
         assertEq(token.balanceOf(alice), mintAmount);
         assertEq(token.totalSupply(), mintAmount);
+        assertEq(token.minted(alice), mintAmount);
     }
 
     function test_Transfer_HappyPath() public {
-        token.mint(alice, 100 ether);
+        token.mint(alice, 10 ether);
 
         vm.prank(alice);
-        token.transfer(bob, 40 ether);
+        token.transfer(bob, 4 ether);
 
-        assertEq(token.balanceOf(alice), 60 ether);
-        assertEq(token.balanceOf(bob), 40 ether);
+        assertEq(token.balanceOf(alice), 6 ether);
+        assertEq(token.balanceOf(bob), 4 ether);
     }
 
     function test_RevertWhen_MintToZeroAddress() public {
         vm.expectRevert(
             abi.encodeWithSelector(IERC20Errors.ERC20InvalidReceiver.selector, address(0))
         );
-        token.mint(address(0), 50 ether);
+        token.mint(address(0), 1 ether);
+    }
+
+    function test_RevertWhen_FaucetCapExceeded() public {
+        token.mint(alice, 10 ether);
+        vm.expectRevert(MockCollateralToken.FaucetCapExceeded.selector);
+        token.mint(alice, 1);
     }
 
     function test_RevertWhen_TransferExceedsBalance() public {

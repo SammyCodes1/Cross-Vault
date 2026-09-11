@@ -10,6 +10,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
  */
 contract DebtToken is ERC20 {
     address public vault;
+    address public immutable deployer;
 
     error Unauthorized();
     error VaultAlreadySet();
@@ -26,14 +27,16 @@ contract DebtToken is ERC20 {
      */
     constructor(address _vault) ERC20("CrossVault Test USD", "tvUSD") {
         vault = _vault;
+        deployer = msg.sender;
     }
 
     /**
-     * @notice Allows setting vault address if unset (0) in constructor.
-     * Can only be called once.
+     * @notice Allows the deployer to set the vault address if it was left unset.
+     * Can only be called once, and only by the contract deployer.
      * @param _vault Address of the CrossVault contract.
      */
     function setVault(address _vault) external {
+        if (msg.sender != deployer) revert Unauthorized();
         if (vault != address(0)) revert VaultAlreadySet();
         if (_vault == address(0)) revert InvalidVault();
         vault = _vault;

@@ -272,10 +272,29 @@ describe('Relayer Service Unit & API Tests', () => {
       assert.strictEqual(res.body.source, 'Pyth');
     });
 
-    it('POST /attest/price/pyth supports explicit transactionHash and blockNumber in body', async () => {
+    it('POST /attest/lock/:lockId returns 429 after the per-IP attest budget is spent', async () => {
+      const testApp = createRelayerApp({
+        getSepoliaLogs: async () => [dummyLog],
+        fetchProof: async () => dummyProof,
+        submitOpenPosition: async () => ({
+          hash: '0x' + '2'.repeat(64),
+          positionId: '1',
+        }),
+      });
+      for (let i = 0; i < 8; i++) {
+        const ok = await request(testApp).post('/attest/lock/1');
+        assert.strictEqual(ok.status, 200);
+      }
+      const limited = await request(testApp).post('/attest/lock/1');
+      assert.strictEqual(limited.status, 429);
+      assert.ok(limited.body.error.includes('Rate limit exceeded'));
+    });
+
+    it('POST /attest/price/pyth ignores untrusted transactionHash in the request body', async () => {
       let fetchedTx = '';
       let fetchedBlock = 0;
       const testApp = createRelayerApp({
+        getSepoliaLogs: async () => [dummyLog],
         fetchProof: async (txHash, blockHeight) => {
           fetchedTx = txHash;
           fetchedBlock = blockHeight;
@@ -292,8 +311,8 @@ describe('Relayer Service Unit & API Tests', () => {
       assert.strictEqual(res.body.success, true);
       assert.strictEqual(res.body.transactionHash, '0x' + '5'.repeat(64));
       assert.strictEqual(res.body.source, 'Pyth');
-      assert.strictEqual(fetchedTx, '0xabc123');
-      assert.strictEqual(fetchedBlock, 999999);
+      assert.strictEqual(fetchedTx, dummyLog.transactionHash);
+      assert.strictEqual(fetchedBlock, dummyLog.blockNumber);
     });
   });
 });

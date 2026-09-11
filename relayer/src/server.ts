@@ -40,10 +40,30 @@ export interface RelayerDependencies {
   ) => Promise<{ hash: string }>;
 }
 
+const ATTEST_RATE_MAX = 8;
+const ATTEST_RATE_WINDOW_MS = 60_000;
+
+function createAttestRateLimiter() {
+  const hits = new Map<string, number[]>();
+  return function allowAttest(req: Request, res: Response): boolean {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const recent = (hits.get(ip) || []).filter((t) => now - t < ATTEST_RATE_WINDOW_MS);
+    if (recent.length >= ATTEST_RATE_MAX) {
+      res.status(429).json({ error: 'Rate limit exceeded' });
+      return false;
+    }
+    recent.push(now);
+    hits.set(ip, recent);
+    return true;
+  };
+}
+
 export function createRelayerApp(deps: RelayerDependencies = {}) {
   const app = express();
   app.use(cors());
   app.use(express.json());
+  const allowAttest = createAttestRateLimiter();
 
   // Health check endpoint
   app.get('/health', (_req: Request, res: Response) => {
@@ -60,6 +80,7 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
    * and submits openPosition on Creditcoin 3 CrossVault.
    */
   app.post('/attest/lock/:lockId', async (req: Request, res: Response) => {
+    if (!allowAttest(req, res)) return;
     const { lockId } = req.params;
     let lockIdBigInt: bigint;
     try {
@@ -216,7 +237,8 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
    * Fetches the latest PriceUpdated log from MockPriceFeed on Sepolia,
    * gets a proof, and submits it to CrossVault.updatePrice on CC3.
    */
-  app.post('/attest/price', async (_req: Request, res: Response) => {
+  app.post('/attest/price', async (req: Request, res: Response) => {
+    if (!allowAttest(req, res)) return;
     console.log('[Relayer] Attesting latest price update from Sepolia');
 
     // 1. Read deployed addresses
@@ -342,6 +364,7 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
    * gets a proof from the USC Prover API, and submits it to CrossVault.updatePriceFromPyth on CC3.
    */
   app.post('/attest/price/pyth', async (req: Request, res: Response) => {
+    if (!allowAttest(req, res)) return;
     console.log('[Relayer] Attesting latest Pyth price update from Sepolia');
 
     // 1. Read deployed addresses
@@ -358,45 +381,39 @@ export function createRelayerApp(deps: RelayerDependencies = {}) {
     let blockNumber: number | null = null;
     let transactionHash: string | null = null;
 
-    if (req.body && req.body.transactionHash && req.body.blockNumber) {
-      transactionHash = req.body.transactionHash;
-      blockNumber = Number(req.body.blockNumber);
-    } else {
-      // Query Sepolia for latest PriceFeedUpdate log matching Pyth ETH/USD feed
-      try {
-        const priceFeedUpdateTopic = pythInterface.getEvent('PriceFeedUpdate')!.topicHash;
-        const feedIdTopic = PYTH_ETH_FEED_ID;
+    try {
+      const priceFeedUpdateTopic = pythInterface.getEvent('PriceFeedUpdate')!.topicHash;
+      const feedIdTopic = PYTH_ETH_FEED_ID;
 
-        let logs: ethers.Log[];
-        if (deps.getSepoliaLogs) {
-          logs = await deps.getSepoliaLogs({
-            address: PYTH_CONTRACT_SEPOLIA,
-            topics: [priceFeedUpdateTopic, feedIdTopic],
-          });
-        } else {
-          const sepoliaProvider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
-          const latestBlock = await sepoliaProvider.getBlockNumber();
-          const fromBlock = Math.max(0, latestBlock - 50000);
+      let logs: ethers.Log[];
+      if (deps.getSepoliaLogs) {
+        logs = await deps.getSepoliaLogs({
+          address: PYTH_CONTRACT_SEPOLIA,
+          topics: [priceFeedUpdateTopic, feedIdTopic],
+        });
+      } else {
+        const sepoliaProvider = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
+        const latestBlock = await sepoliaProvider.getBlockNumber();
+        const fromBlock = Math.max(0, latestBlock - 50000);
 
-          logs = await sepoliaProvider.getLogs({
-            address: PYTH_CONTRACT_SEPOLIA,
-            topics: [priceFeedUpdateTopic, feedIdTopic],
-            fromBlock,
-            toBlock: 'latest',
-          });
-        }
-
-        if (logs && logs.length > 0) {
-          const targetLog = logs[logs.length - 1];
-          blockNumber = targetLog.blockNumber;
-          transactionHash = targetLog.transactionHash;
-        }
-      } catch (err: any) {
-        console.error('[Relayer] Error querying Sepolia Pyth PriceFeedUpdate logs:', err);
-        return res.status(500).json({
-          error: `Failed to query Sepolia logs: ${err.message}`,
+        logs = await sepoliaProvider.getLogs({
+          address: PYTH_CONTRACT_SEPOLIA,
+          topics: [priceFeedUpdateTopic, feedIdTopic],
+          fromBlock,
+          toBlock: 'latest',
         });
       }
+
+      if (logs && logs.length > 0) {
+        const targetLog = logs[logs.length - 1];
+        blockNumber = targetLog.blockNumber;
+        transactionHash = targetLog.transactionHash;
+      }
+    } catch (err: any) {
+      console.error('[Relayer] Error querying Sepolia Pyth PriceFeedUpdate logs:', err);
+      return res.status(500).json({
+        error: `Failed to query Sepolia logs: ${err.message}`,
+      });
     }
 
     if (!transactionHash || blockNumber === null) {

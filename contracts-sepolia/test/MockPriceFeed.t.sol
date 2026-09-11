@@ -40,4 +40,14 @@ contract MockPriceFeedTest is Test {
         vm.expectRevert(MockPriceFeed.Unauthorized.selector);
         feed.setPrice(3000 * 1e8);
     }
+
+    function test_RevertWhen_ZeroPrice() public {
+        vm.expectRevert(MockPriceFeed.InvalidPrice.selector);
+        feed.setPrice(0);
+    }
+
+    function test_RevertWhen_PriceAboveMax() public {
+        vm.expectRevert(MockPriceFeed.InvalidPrice.selector);
+        feed.setPrice(1_000_000 ether + 1);
+    }
 }
