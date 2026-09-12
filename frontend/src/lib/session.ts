@@ -14,6 +14,7 @@ export interface PositionMeta {
   lockId?: number;
   sepoliaTx?: string;
   cc3Tx?: string;
+  claimed?: boolean;
 }
 
 function metaStore(): Record<string, PositionMeta> {

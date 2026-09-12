@@ -15,6 +15,11 @@ interface ProcessGlassProps {
   message: string;
   error?: string | null;
   onDismiss: () => void;
+  actionButton?: {
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+  } | null;
 }
 
 const SUBS: Record<string, string[]> = {
@@ -25,6 +30,8 @@ const SUBS: Record<string, string[]> = {
   verifying: ['openPosition', 'mint tvUSD', 'position opened'],
   switching: ['Creditcoin 3', 'wallet confirm', 'network ready'],
   repay: ['burn tvUSD', 'mark repaid', 'position closed'],
+  switching_sepolia: ['switch to Sepolia', 'wallet prompt', 'Ethereum testnet'],
+  unlocking: ['CollateralLock.unlock', 'reclaiming mWETH', 'funds to wallet'],
 };
 
 export const ProcessGlass: React.FC<ProcessGlassProps> = ({
@@ -36,6 +43,7 @@ export const ProcessGlass: React.FC<ProcessGlassProps> = ({
   message,
   error,
   onDismiss,
+  actionButton,
 }) => {
   const currentIndex = Math.max(0, steps.findIndex((step) => step.id === currentId));
   const subs = SUBS[currentId] || SUBS.attesting;
@@ -132,9 +140,25 @@ export const ProcessGlass: React.FC<ProcessGlassProps> = ({
 
           {(status === 'success' || status === 'error') && (
             <div className="xr-actions">
-              <button type="button" className="btn-primary btn-block" onClick={onDismiss}>
-                {status === 'success' ? 'Done' : 'Close'}
-              </button>
+              {actionButton && status === 'success' ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn-primary btn-block"
+                    onClick={actionButton.onClick}
+                    disabled={actionButton.disabled}
+                  >
+                    {actionButton.label}
+                  </button>
+                  <button type="button" className="btn-ghost btn-block" onClick={onDismiss}>
+                    Close
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="btn-primary btn-block" onClick={onDismiss}>
+                  {status === 'success' ? 'Done' : 'Close'}
+                </button>
+              )}
             </div>
           )}
         </div>

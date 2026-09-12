@@ -8,13 +8,24 @@ import {
   LEGACY_DEBT_TOKEN,
   COLLATERAL_LOCK_ABI,
 } from '../contracts/config';
-import { waitForSepoliaWallet, sendSepoliaTx, mapSepoliaRpcError } from '../lib/sepolia';
+import {
+  waitForSepoliaWallet,
+  sendSepoliaTx,
+  mapSepoliaRpcError,
+  getSepoliaProvider,
+} from '../lib/sepolia';
+import { loadPositionMeta, savePositionMeta } from '../lib/session';
 import { ProcessGlass, type ProcessStep } from './ProcessGlass';
 
 const REPAY_STEPS: ProcessStep[] = [
-  { id: 'switching', label: 'Switch network', hint: 'Creditcoin 3 for the repay tx' },
+  { id: 'switching', label: 'Creditcoin 3', hint: 'Switch network for repayment' },
   { id: 'approving', label: 'Approve tvUSD', hint: 'Exact debt amount to the vault' },
-  { id: 'repay', label: 'Repay debt', hint: 'Burn tvUSD and close the position' },
+  { id: 'repay', label: 'Repay debt', hint: 'Burn tvUSD on Creditcoin 3' },
+];
+
+const CLAIM_STEPS: ProcessStep[] = [
+  { id: 'switching_sepolia', label: 'Switch to Sepolia', hint: 'Connect to Sepolia' },
+  { id: 'unlocking', label: 'Claim mWETH', hint: 'Release escrowed tokens to wallet' },
 ];
 
 export interface VaultPosition {
@@ -31,6 +42,7 @@ export interface VaultPosition {
   lockId?: number;
   sepoliaTx?: string;
   cc3Tx?: string;
+  claimed?: boolean;
 }
 
 interface PositionDashboardProps {
@@ -44,6 +56,61 @@ interface PositionDashboardProps {
   onSwitchToCC3: () => Promise<void>;
   onSwitchToSepolia: () => Promise<void>;
   getSigner: () => Promise<ethers.JsonRpcSigner | null>;
+}
+
+async function findLockId(position: VaultPosition, userAddress: string): Promise<number | null> {
+  const meta = loadPositionMeta(position.vault, position.positionId);
+  const candidateId =
+    position.lockId && position.lockId > 0
+      ? position.lockId
+      : meta.lockId && meta.lockId > 0
+      ? meta.lockId
+      : null;
+
+  try {
+    const sepolia = await getSepoliaProvider();
+    const lockContract = new Contract(
+      CONTRACT_ADDRESSES.COLLATERAL_LOCK,
+      [
+        'function nextLockId() view returns (uint256)',
+        'function getLock(uint256) view returns (tuple(address owner, uint256 amount, bool active))',
+      ],
+      sepolia
+    );
+
+    if (candidateId) {
+      try {
+        const lockInfo = await lockContract.getLock(candidateId);
+        if (lockInfo.active && lockInfo.owner.toLowerCase() === userAddress.toLowerCase()) {
+          savePositionMeta(position.vault, position.positionId, { lockId: candidateId });
+          return candidateId;
+        } else if (!lockInfo.active) {
+          savePositionMeta(position.vault, position.positionId, { claimed: true });
+          return null;
+        }
+      } catch {
+        return candidateId;
+      }
+    }
+
+    const next = Number(await lockContract.nextLockId());
+    const targetWei = ethers.parseEther(position.collateralAmount);
+    for (let id = next - 1; id >= 1; id--) {
+      const lockInfo = await lockContract.getLock(id);
+      if (
+        lockInfo.active &&
+        lockInfo.owner.toLowerCase() === userAddress.toLowerCase() &&
+        lockInfo.amount === targetWei
+      ) {
+        savePositionMeta(position.vault, position.positionId, { lockId: id });
+        return id;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not query Sepolia locks:', e);
+    if (candidateId) return candidateId;
+  }
+  return null;
 }
 
 export const PositionDashboard: React.FC<PositionDashboardProps> = ({
@@ -62,10 +129,17 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
   const [repayingId, setRepayingId] = useState<number | null>(null);
   const [unlockingId, setUnlockingId] = useState<number | null>(null);
   const [repayOpen, setRepayOpen] = useState(false);
+  const [repayModalTitle, setRepayModalTitle] = useState('Repay Debt');
+  const [repayModalSteps, setRepayModalSteps] = useState<ProcessStep[]>(REPAY_STEPS);
   const [repayStep, setRepayStep] = useState('switching');
   const [repayStatus, setRepayStatus] = useState<'running' | 'success' | 'error'>('running');
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [repayActionBtn, setRepayActionBtn] = useState<{
+    label: string;
+    onClick: () => void;
+    disabled?: boolean;
+  } | null>(null);
 
   const isCC3 = chainId === NETWORKS.CREDITCOIN.chainId;
 
@@ -123,11 +197,65 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     }
   };
 
+  const executeClaim = async (position: VaultPosition, lockId: number) => {
+    setRepayingId(position.positionId);
+    setUnlockingId(position.positionId);
+    setRepayModalTitle('Claim Collateral');
+    setRepayModalSteps(CLAIM_STEPS);
+    setRepayOpen(true);
+    setRepayStatus('running');
+    setRepayStep('switching_sepolia');
+    setRepayActionBtn(null);
+    setErrorMessage(null);
+    setActionMessage('Switching network to Ethereum Sepolia...');
+
+    try {
+      await waitForSepoliaWallet(onSwitchToSepolia);
+      const signer = await getSigner();
+      if (!signer) throw new Error('Could not obtain wallet signer');
+
+      setRepayStep('unlocking');
+      setActionMessage(
+        `Unlocking Lock #${lockId} on Sepolia to reclaim ${position.collateralAmount} mWETH...`
+      );
+
+      const iface = new ethers.Interface(COLLATERAL_LOCK_ABI);
+      const sent = await sendSepoliaTx(signer, {
+        to: CONTRACT_ADDRESSES.COLLATERAL_LOCK,
+        data: iface.encodeFunctionData('unlock', [BigInt(lockId)]),
+      });
+
+      savePositionMeta(position.vault, position.positionId, {
+        claimed: true,
+        lockId,
+      });
+
+      setRepayStatus('success');
+      setActionMessage(
+        `Claim confirmed! ${position.collateralAmount} mWETH returned to your wallet. Tx: ${sent.hash.slice(0, 10)}...`
+      );
+      setRepayActionBtn(null);
+      onRefresh();
+      setTimeout(onRefresh, 2500);
+      setTimeout(onRefresh, 8000);
+    } catch (err: unknown) {
+      console.error('Claim failed:', err);
+      setRepayStatus('error');
+      setErrorMessage(mapSepoliaRpcError(err).message);
+    } finally {
+      setRepayingId(null);
+      setUnlockingId(null);
+    }
+  };
+
   const handleRepay = async (position: VaultPosition) => {
     if (!account) return;
     setErrorMessage(null);
     setActionMessage(null);
     setRepayingId(position.positionId);
+    setRepayModalTitle('Repay Debt');
+    setRepayModalSteps(REPAY_STEPS);
+    setRepayActionBtn(null);
     setRepayOpen(true);
     setRepayStatus('running');
     setRepayStep('switching');
@@ -175,11 +303,31 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
       setActionMessage(`Calling CrossVault.repay(${position.positionId})...`);
       const repayTx = await crossVaultContract.repay(position.positionId);
       await repayTx.wait();
-      setRepayStatus('success');
-      setActionMessage(`Position #${position.positionId} repaid. Unlock on Sepolia to reclaim mWETH.`);
+
       onRefresh();
       setTimeout(onRefresh, 2500);
-      setTimeout(onRefresh, 8000);
+
+      // Query lock ID for guided collateral reclamation on Sepolia
+      setActionMessage('Position repaid on Creditcoin 3! Looking up collateral lock on Sepolia...');
+      const lockId = await findLockId(position, account);
+
+      setRepayStatus('success');
+      if (lockId) {
+        setActionMessage(
+          `Position #${position.positionId} repaid on Creditcoin 3! You can now claim your ${position.collateralAmount} mWETH back to your wallet on Sepolia.`
+        );
+        setRepayActionBtn({
+          label: `Claim ${position.collateralAmount} mWETH on Sepolia →`,
+          onClick: () => {
+            void executeClaim(position, lockId);
+          },
+        });
+      } else {
+        setActionMessage(
+          `Position #${position.positionId} repaid on Creditcoin 3. Collateral was either already claimed or could not be mapped.`
+        );
+        setRepayActionBtn(null);
+      }
     } catch (err: unknown) {
       console.error('Repay failed:', err);
       setRepayStatus('error');
@@ -190,25 +338,29 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
   };
 
   const handleUnlock = async (position: VaultPosition) => {
-    if (!account || !position.lockId) return;
+    if (!account) return;
     setErrorMessage(null);
     setActionMessage(null);
     setUnlockingId(position.positionId);
+    setRepayModalTitle('Claim Collateral');
+    setRepayModalSteps(CLAIM_STEPS);
+    setRepayActionBtn(null);
+    setRepayOpen(true);
+    setRepayStatus('running');
+    setRepayStep('switching_sepolia');
+    setActionMessage('Looking up your collateral lock on Sepolia...');
+
     try {
-      setActionMessage('Switching to Sepolia to unlock escrow...');
-      await waitForSepoliaWallet(onSwitchToSepolia);
-      const signer = await getSigner();
-      if (!signer) throw new Error('Could not obtain wallet signer');
-      const iface = new ethers.Interface(COLLATERAL_LOCK_ABI);
-      setActionMessage(`Unlocking lock #${position.lockId} on Sepolia...`);
-      const sent = await sendSepoliaTx(signer, {
-        to: CONTRACT_ADDRESSES.COLLATERAL_LOCK,
-        data: iface.encodeFunctionData('unlock', [BigInt(position.lockId)]),
-      });
-      setActionMessage(`Unlocked. Sepolia tx ${sent.hash.slice(0, 10)}...`);
-      onRefresh();
+      const lockId = await findLockId(position, account);
+      if (!lockId) {
+        throw new Error(
+          'No active collateral lock found on Sepolia for this position. It may have already been claimed.'
+        );
+      }
+      await executeClaim(position, lockId);
     } catch (err: unknown) {
       console.error('Unlock failed:', err);
+      setRepayStatus('error');
       setErrorMessage(mapSepoliaRpcError(err).message);
     } finally {
       setUnlockingId(null);
@@ -376,17 +528,21 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                               {repayingId === pos.positionId ? 'Repaying...' : 'Repay'}
                             </button>
                           )}
-                          {isUser && pos.repaid && pos.lockId ? (
+                          {isUser && !pos.legacy && pos.repaid && !pos.liquidated && !pos.claimed && (
                             <button
                               type="button"
                               className="btn-ghost"
                               disabled={unlockingId === pos.positionId}
                               onClick={() => handleUnlock(pos)}
+                              title="Claim your locked mWETH back to your wallet on Sepolia"
                             >
-                              {unlockingId === pos.positionId ? 'Unlocking...' : 'Unlock'}
+                              {unlockingId === pos.positionId ? 'Claiming...' : 'Claim mWETH'}
                             </button>
-                          ) : null}
-                          {(pos.liquidated || (pos.repaid && !pos.lockId)) && (
+                          )}
+                          {isUser && !pos.legacy && pos.repaid && pos.claimed && (
+                            <span className="badge badge-success">Claimed</span>
+                          )}
+                          {(pos.liquidated || (pos.legacy && pos.repaid)) && (
                             <span className="text-muted">Closed</span>
                           )}
                           {!pos.isLiquidatable && !pos.liquidated && !pos.repaid && !isUser && (
@@ -435,14 +591,16 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
 
       <ProcessGlass
         open={repayOpen}
-        title="Repay"
-        steps={REPAY_STEPS}
+        title={repayModalTitle}
+        steps={repayModalSteps}
         currentId={repayStep}
         status={repayStatus}
-        message={actionMessage || 'Closing the Creditcoin position.'}
+        message={actionMessage || 'Processing vault action.'}
         error={errorMessage}
+        actionButton={repayActionBtn}
         onDismiss={() => {
           setRepayOpen(false);
+          setRepayActionBtn(null);
           if (repayStatus !== 'running') {
             setActionMessage(null);
             setErrorMessage(null);

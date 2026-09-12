@@ -1374,7 +1374,12 @@ a:hover { text-decoration: underline; }
   color: #1a0f0c;
 }
 
-.xr-actions { margin-top: 1rem; }
+.xr-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
 
 @keyframes xr-in {
   from { opacity: 0; transform: translateY(16px) scale(0.97); }

@@ -239,6 +239,7 @@ export const App: React.FC = () => {
               lockId,
               sepoliaTx: meta.sepoliaTx,
               cc3Tx: meta.cc3Tx,
+              claimed: Boolean(meta.claimed),
             };
           } catch (posErr) {
             console.warn(`Error querying position ${i} on ${vaultAddress}:`, posErr);
