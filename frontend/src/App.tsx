@@ -240,6 +240,7 @@ export const App: React.FC = () => {
               sepoliaTx: meta.sepoliaTx,
               cc3Tx: meta.cc3Tx,
               claimed: Boolean(meta.claimed),
+              claimTx: meta.claimTx,
             };
           } catch (posErr) {
             console.warn(`Error querying position ${i} on ${vaultAddress}:`, posErr);

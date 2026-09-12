@@ -43,6 +43,7 @@ export interface VaultPosition {
   sepoliaTx?: string;
   cc3Tx?: string;
   claimed?: boolean;
+  claimTx?: string;
 }
 
 interface PositionDashboardProps {
@@ -140,6 +141,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     onClick: () => void;
     disabled?: boolean;
   } | null>(null);
+  const [repayTxHash, setRepayTxHash] = useState<string | null>(null);
+  const [repayTxUrl, setRepayTxUrl] = useState<string | null>(null);
 
   const isCC3 = chainId === NETWORKS.CREDITCOIN.chainId;
 
@@ -206,6 +209,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     setRepayStatus('running');
     setRepayStep('switching_sepolia');
     setRepayActionBtn(null);
+    setRepayTxHash(null);
+    setRepayTxUrl(null);
     setErrorMessage(null);
     setActionMessage('Switching network to Ethereum Sepolia...');
 
@@ -228,11 +233,15 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
       savePositionMeta(position.vault, position.positionId, {
         claimed: true,
         lockId,
+        claimTx: sent.hash,
       });
+
+      setRepayTxHash(sent.hash);
+      setRepayTxUrl(`${NETWORKS.SEPOLIA.blockExplorerUrls[0]}/tx/${sent.hash}`);
 
       setRepayStatus('success');
       setActionMessage(
-        `Claim confirmed! ${position.collateralAmount} mWETH returned to your wallet. Tx: ${sent.hash.slice(0, 10)}...`
+        `Claim confirmed! ${position.collateralAmount} mWETH returned to your wallet.`
       );
       setRepayActionBtn(null);
       onRefresh();
@@ -256,6 +265,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     setRepayModalTitle('Repay Debt');
     setRepayModalSteps(REPAY_STEPS);
     setRepayActionBtn(null);
+    setRepayTxHash(null);
+    setRepayTxUrl(null);
     setRepayOpen(true);
     setRepayStatus('running');
     setRepayStep('switching');
@@ -345,6 +356,8 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
     setRepayModalTitle('Claim Collateral');
     setRepayModalSteps(CLAIM_STEPS);
     setRepayActionBtn(null);
+    setRepayTxHash(null);
+    setRepayTxUrl(null);
     setRepayOpen(true);
     setRepayStatus('running');
     setRepayStep('switching_sepolia');
@@ -501,8 +514,18 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
                             >
                               Open
                             </a>
-                          ) : (
-                            !pos.sepoliaTx && <span className="text-muted">-</span>
+                          ) : null}
+                          {pos.claimTx ? (
+                            <a
+                              href={`${NETWORKS.SEPOLIA.blockExplorerUrls[0]}/tx/${pos.claimTx}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Claim
+                            </a>
+                          ) : null}
+                          {!pos.sepoliaTx && !pos.cc3Tx && !pos.claimTx && (
+                            <span className="text-muted">-</span>
                           )}
                         </div>
                       </td>
@@ -598,9 +621,13 @@ export const PositionDashboard: React.FC<PositionDashboardProps> = ({
         message={actionMessage || 'Processing vault action.'}
         error={errorMessage}
         actionButton={repayActionBtn}
+        txHash={repayTxHash}
+        txUrl={repayTxUrl}
         onDismiss={() => {
           setRepayOpen(false);
           setRepayActionBtn(null);
+          setRepayTxHash(null);
+          setRepayTxUrl(null);
           if (repayStatus !== 'running') {
             setActionMessage(null);
             setErrorMessage(null);

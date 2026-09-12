@@ -1143,6 +1143,39 @@ a:hover { text-decoration: underline; }
   font-family: var(--font-mono);
 }
 
+.xr-tx-box {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: left;
+}
+
+.xr-tx-tag {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted, #888);
+  font-weight: 600;
+}
+
+.xr-tx-hash {
+  font-size: 0.78rem;
+  color: var(--accent, #6ee7b7);
+  word-break: break-all;
+  line-height: 1.35;
+  text-decoration: underline;
+  transition: opacity 0.15s ease;
+}
+
+.xr-tx-hash:hover {
+  opacity: 0.8;
+}
+
 .xr-stage {
   position: relative;
   width: 11.5rem;

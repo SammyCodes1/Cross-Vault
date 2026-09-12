@@ -20,6 +20,8 @@ interface ProcessGlassProps {
     onClick: () => void;
     disabled?: boolean;
   } | null;
+  txHash?: string | null;
+  txUrl?: string | null;
 }
 
 const SUBS: Record<string, string[]> = {
@@ -44,6 +46,8 @@ export const ProcessGlass: React.FC<ProcessGlassProps> = ({
   error,
   onDismiss,
   actionButton,
+  txHash,
+  txUrl,
 }) => {
   const currentIndex = Math.max(0, steps.findIndex((step) => step.id === currentId));
   const subs = SUBS[currentId] || SUBS.attesting;
@@ -94,6 +98,20 @@ export const ProcessGlass: React.FC<ProcessGlassProps> = ({
             <p className="xr-kicker">CrossVault</p>
             <h2 id="xr-title">{title}</h2>
             <p className="xr-message">{status === 'error' ? error || message : message}</p>
+            {status === 'success' && txHash && (
+              <div className="xr-tx-box">
+                <span className="xr-tx-tag">Claim Transaction</span>
+                <a
+                  href={txUrl || `https://sepolia.etherscan.io/tx/${txHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="xr-tx-hash mono"
+                  title="View transaction on block explorer"
+                >
+                  {txHash} ↗
+                </a>
+              </div>
+            )}
           </header>
 
           {status === 'running' && (
